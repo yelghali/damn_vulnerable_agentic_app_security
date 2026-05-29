@@ -1,0 +1,39 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Virtual envs ---
+.venv/
+venv/
+env/
+
+# --- Secrets / local config ---
+.env
+.env.*
+!.env.example
+
+# --- Local data artifacts ---
+src/data/*.sqlite
+*.sqlite
+*.sqlite3
+
+# --- Terraform ---
+# Keep .terraform.lock.hcl checked in (provider version pinning).
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# --- Eval / red-team output ---
+src/evals/out/
+src/redteam/out/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db

@@ -1,0 +1,18 @@
+[project]
+name = "zava-wealth-advisor-lab"
+version = "0.1.0"
+description = "Damn Vulnerable Agentic App security lab (Zava Wealth Advisor)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# The lab intentionally contains insecure patterns, all marked `# LAB-VULN`.
+# Don't fail lint on them; they are the teaching artifact.
+ignore = ["S101", "S102", "S608", "BLE001"]
