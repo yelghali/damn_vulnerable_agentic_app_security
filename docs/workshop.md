@@ -34,9 +34,15 @@ Welcome! In this hands-on lab you will take **Zava Wealth Advisor** — a delibe
 
 Zava is a fictional company. The assistant deliberately handles **PII and financial data** (names, SSNs, account numbers, balances, credit scores), so security is not optional. Each module follows the same loop:
 
-> **Scenario → Exploit it → Why it's dangerous (OWASP / Microsoft mapping) → Remediate → Verify → Learn more**
+> **Scenario → Exploit it → Why it's dangerous (OWASP / Microsoft mapping) → Remediate (design · secure code · Azure wiring) → Verify → Learn more**
 
-The single teaching artifact throughout is the **diff** between the *vulnerable* baseline and the *secure* end-state. Every mitigation is gated behind one `ENABLE_*` toggle in [src/config.py](../src/config.py), and every intentional weakness is marked in code with a `# LAB-VULN(Vn): ...` comment.
+The **Remediate** step is the heart of every module. You don't just flip a switch — you study *how* the control is built: the secure code path, the design decisions and trade-offs behind it, and the concrete **Azure service configuration** (Terraform / CLI / SDK) that enforces it in production.
+
+<div class="important" data-title="The toggle is a teaching aid, not the solution">
+
+> Every mitigation is gated behind one `ENABLE_*` toggle in [src/config.py](../src/config.py), and every intentional weakness is marked with a `# LAB-VULN(Vn): ...` comment. **The toggle exists only so you can flip the before/after instantly offline.** The real deliverable of each module is understanding the *secure implementation* it gates — the parameterized query, the OBO token exchange, the APIM policy, the sandbox — and how you'd wire the equivalent Azure control. In production, most of these controls are enforced on the **platform** (Foundry, APIM, Entra, Postgres), not by an app-level boolean.
+
+</div>
 
 <div class="info" data-title="Two tracks">
 
@@ -95,7 +101,9 @@ The master switch is `SECURE_MODE`. Any individual toggle left unset inherits `S
 
 - `SECURE_MODE=false` → fully vulnerable baseline (Module 0 default).
 - `SECURE_MODE=true` → every mitigation on (the answer key).
-- During a module you flip **one** toggle to see one before/after.
+- During a module you flip **one** toggle to *see* one before/after — then open the file it gates and walk the secure code path, and follow the **Azure wiring** sub-section to enforce the same control on the platform.
+
+Each module's *Remediate* section is organized as: **(a) the secure design & code**, **(b) the Azure wiring**, **(c) design notes / trade-offs**, then the toggle to flip the offline before/after.
 
 ---
 
@@ -206,19 +214,56 @@ An **ungoverned model** (V1) and **missing guardrails** (V2) let the agent produ
 
 ### Remediate
 
-The **canonical** control is on **Foundry**, not in app code:
+There are three layers to this control. The **canonical** one lives on **Foundry**, not in app code — but understanding *why*, and how the in-app mirror and the prompt work together, is the point.
 
-1. **Bind a content filter to the model deployment.** Attach an Azure AI Content Safety filter (harmful categories + a custom blocklist for off-topic terms) to your governed Foundry deployment. Point the app at the governed deployment — see `active_model_deployment` in [src/config.py](../src/config.py), which selects the governed deployment when `enable_content_safety` is on.
-2. **Harden the system prompt.** Switch from `prompts/vulnerable/` to `prompts/secure/` (the hardened prompt refuses off-topic and configuration-leak requests).
+#### (a) The secure design & code
 
-Flip the toggle:
+The offline mirror in [src/agents/guard/guard.py](../src/agents/guard/guard.py) shows the *shape* of the decision a content filter makes — classify the text against harmful categories plus an org-specific off-topic blocklist, and refuse on a hit:
+
+```python
+def check_content_safety(text: str) -> None:
+    if not get_settings().enable_content_safety:
+        return  # LAB-VULN(V1/V2): no content filtering
+    low = text.lower()
+    for category, terms in _CATEGORY_TERMS.items():      # sexual / hate / violence / self-harm
+        if any(t in low for t in terms):
+            raise SafetyViolation(f"Blocked harmful content ({category}).", category)
+    for term in _OFF_TOPIC_TERMS:                         # politics, "tell me a joke about", ...
+        if term in low:
+            raise SafetyViolation("Request is outside Zava's financial scope.", "off_topic")
+```
+
+In Azure this heuristic is replaced by the real **Azure AI Content Safety** classifier (severity-scored `Hate/Sexual/Violence/SelfHarm` 0–7) plus a **custom blocklist** for the off-topic terms. The same call is made *twice* — on the user input **and** on the model output — which is why the orchestrator re-checks the response before returning it.
+
+The second layer is the **system prompt**. Compare `prompts/vulnerable/orchestrator.md` (a bare "you are a helpful assistant") with `prompts/secure/orchestrator.md`, which scopes the agent to Zava finance topics and refuses configuration/identity-leak requests. A hardened prompt is *defense in depth*, not the primary control — it's bypassable by injection (that's Module 2), so it never stands alone.
+
+#### (b) The Azure wiring
+
+Content filtering is enforced on the **model deployment** so it applies to every call regardless of app code. Create a custom content filter and bind it when you deploy the model:
+
+```bash
+# Create a custom Content Safety filter policy (harm categories + blocklist), then
+# attach it to the Foundry/AOAI deployment so it runs on every request + response.
+az cognitiveservices account deployment create \
+  --name <foundry-account> --resource-group <rg> \
+  --deployment-name gpt-4o-mini --model-name gpt-4o-mini --model-version <ver> \
+  --model-format OpenAI --rai-policy-name zava-finance-filter
+```
+
+The app simply points at the **governed** deployment — `active_model_deployment` in [src/config.py](../src/config.py) selects it when `enable_content_safety` is on. No filtering logic ships in the app; the platform owns it.
+
+#### (c) Design notes
+
+- **Why platform-first?** A filter bound to the deployment can't be skipped by a code path that forgot to call the guard. The in-app `check_content_safety` exists only for the offline before/after and as an API-layer backstop.
+- **Blocklists vs. categories.** Harm categories are model-driven; "no politics / no jokes" is a *business* rule, so it belongs in a custom blocklist you own and can tune per tenant.
+- **Output filtering matters.** Filtering only the input misses harmful *completions*; always filter both directions.
+
+#### See the before/after
 
 ```bash
 # .env
 ENABLE_CONTENT_SAFETY=true
 ```
-
-The in-app `check_content_safety` in [src/agents/guard/guard.py](../src/agents/guard/guard.py) mirrors the Foundry filter offline so you can test the before/after without Azure.
 
 ### Verify
 
@@ -271,14 +316,55 @@ pytest src/tests/test_vulnerabilities.py::test_v2_jailbreak_passes_when_disabled
 
 ### Remediate
 
-Enable **Prompt Shields** as a Foundry model/agent guardrail (mirrored offline by `shield_prompt`), applied to **both** user input and retrieved documents:
+The defining insight: **retrieved documents and tool output are untrusted input**, exactly like the user prompt. The fix applies the *same* shield to *both* sources.
+
+#### (a) The secure design & code
+
+`shield_prompt` in [src/agents/guard/guard.py](../src/agents/guard/guard.py) takes a `source` so the same detector serves user prompts (jailbreak) and documents (indirect injection), and labels the violation accordingly:
+
+```python
+def shield_prompt(text: str, source: str = "user") -> None:
+    if not get_settings().enable_prompt_shields:
+        return  # LAB-VULN(V2): prompt shields disabled
+    low = text.lower()
+    for pat in _INJECTION_PATTERNS:                       # "ignore previous instructions", "DAN", ...
+        if re.search(pat, low):
+            raise SafetyViolation(
+                f"Prompt-injection attempt detected in {source} content.",
+                "jailbreak" if source == "user" else "indirect_injection",
+            )
+```
+
+The knowledge agent calls `shield_prompt(chunk, source="document")` on **every retrieved chunk** before it reaches the model — so the poisoned doc is blocked at the trust boundary, not after the model has already obeyed it. This is also why tool/MCP output gets re-scanned in Module 4: same principle, different untrusted source.
+
+#### (b) The Azure wiring
+
+In Azure the regex heuristic is replaced by **Prompt Shields** (part of Azure AI Content Safety), which has two modes you enable on the model deployment / Foundry agent:
+
+- **`userPrompt`** — detects direct jailbreak attempts in the user turn.
+- **`documents`** — detects *indirect* injection in grounding content you pass alongside the prompt.
+
+```bash
+# Direct call shape (the Foundry guardrail wraps this for every request):
+curl -X POST "$CONTENT_SAFETY_ENDPOINT/contentsafety/text:shieldPrompt?api-version=2024-09-01" \
+  -H "Ocp-Apim-Subscription-Key: $KEY" -H 'content-type: application/json' \
+  -d '{"userPrompt":"<user turn>","documents":["<retrieved chunk>"]}'
+```
+
+Bind Prompt Shields as a **Foundry agent guardrail** so it runs on every grounded call without the app orchestrating it.
+
+#### (c) Design notes
+
+- **Why shield documents separately?** A clean user prompt can still carry an attack *inside the data it retrieves*. Shielding only `userPrompt` leaves RAG wide open — the most common real-world miss.
+- **Detect, don't sanitize.** Don't try to "clean" an injected doc and use it anyway; block it and fall back to other sources. Sanitization is an arms race.
+- **Layer with groundedness.** Prompt Shields stops the *instruction*; Groundedness (Module 8) catches answers that drift from sources if something slips through.
+
+#### See the before/after
 
 ```bash
 # .env
 ENABLE_PROMPT_SHIELDS=true
 ```
-
-The knowledge agent runs every retrieved chunk through `shield_prompt(..., source="document")` so a poisoned doc is blocked before it reaches the model.
 
 ### Verify
 
@@ -327,14 +413,58 @@ pytest src/tests/test_vulnerabilities.py::test_v3_pii_redacted_when_enabled -q
 
 ### Remediate
 
-This is the **first in-app guard layer** — Foundry won't redact prompt PII for you. Enable PII redaction (Azure AI Language PII, mirrored offline by `redact_pii`) **before** logging, before the model, and on the response:
+This is the **first in-app guard layer** — and an important lesson about *where* a control has to live. Foundry filters can *block* harmful content, but they won't silently **redact** PII out of your prompts and logs for you; that transformation has to happen in your pipeline (or at the API layer / Purview, Module 7).
+
+#### (a) The secure design & code
+
+`redact_pii` in [src/agents/guard/guard.py](../src/agents/guard/guard.py) detects entities and returns a **redacted copy plus the entity list** — so you log the safe text but can still act on the structured findings:
+
+```python
+def redact_pii(text: str) -> PiiResult:
+    if not get_settings().enable_pii_redaction:
+        return PiiResult(text=text)  # LAB-VULN(V3): PII flows unredacted
+    redacted, found = text, []
+    for label, pattern in _PII_PATTERNS.items():         # SSN, credit card, email, phone, ACC-…
+        for match in pattern.finditer(text):
+            found.append({"category": label, "text": match.group()})
+        redacted = pattern.sub(f"[{label}]", redacted)
+    return PiiResult(text=redacted, entities=found)
+```
+
+The orchestrator calls this at **three** choke points — it's not enough to redact once:
+
+1. **Pre-log**, before any `logger.info(...)` touches the turn (see [src/agents/orchestrator/orchestrator.py](../src/agents/orchestrator/orchestrator.py)).
+2. **Pre-model**, so PII isn't memorized or echoed by the model.
+3. **Post-response**, so a leaked value never reaches the client.
+
+#### (b) The Azure wiring
+
+Replace the regexes with **Azure AI Language – PII detection**, which recognizes 100+ entity types with confidence scores and locale awareness:
+
+```python
+from azure.ai.textanalytics import TextAnalyticsClient
+from azure.identity import DefaultAzureCredential
+
+client = TextAnalyticsClient(endpoint=LANG_ENDPOINT, credential=DefaultAzureCredential())
+result = client.recognize_pii_entities([turn_text])[0]
+redacted_text = result.redacted_text          # "My SSN is ***********"
+entities = [(e.category, e.confidence_score) for e in result.entities]
+```
+
+Run this in the **API layer / guard middleware** (not as an agent), call it with a **managed identity**, and emit the entity categories (not values) to your audit log.
+
+#### (c) Design notes
+
+- **Why not just rely on Foundry?** Content filters classify and block; they don't return a redacted string you can safely persist. PII redaction is a *data-transformation* control, so it belongs in your pipeline or Purview DLP.
+- **Redact at every boundary.** Logs, prompt, and response are three separate exposure surfaces — a single redaction point leaves the other two open.
+- **System-prompt hardening complements it.** The hardened prompt refuses "print your instructions / admin password," closing the **LLM07** leakage angle that redaction doesn't cover.
+
+#### See the before/after
 
 ```bash
 # .env
 ENABLE_PII_REDACTION=true
 ```
-
-The orchestrator redacts PII pre-log and post-response in [src/agents/orchestrator/orchestrator.py](../src/agents/orchestrator/orchestrator.py); the hardened system prompt refuses configuration-leak requests.
 
 ### Verify
 
@@ -399,7 +529,93 @@ pytest src/tests/test_vulnerabilities.py::test_v8_no_sandbox_allows_imports -q
 
 ### Remediate
 
-Flip four toggles:
+This module bundles four distinct controls because they share one theme: **constrain what a tool-calling agent can actually do.** Work through each — the secure code is short but the reasoning is the lesson.
+
+#### 1. Tool least privilege — kill IDOR *and* SQL injection
+
+Two independent bugs hide in the baseline. Parameterized queries fix injection; an explicit `_authorize` check fixes IDOR. You need **both** — parameterization alone still lets you read another customer's data with a perfectly valid query.
+
+```python
+def _authorize(caller_id: str | None, customer_id: str) -> None:
+    settings = get_settings()
+    if not settings.enable_tool_least_priv:
+        return  # LAB-VULN(V4): no object-level authorization (IDOR)
+    if caller_id is None or caller_id != customer_id:
+        raise ToolError(f"principal '{caller_id}' may not access customer '{customer_id}'.")
+
+# secure read: parameterized, never string-interpolated
+cur = conn.execute(
+    "SELECT account_id, account_type, balance FROM accounts WHERE customer_id = ?",
+    (customer_id,),
+)
+```
+
+See [src/agents/tools/db.py](../src/agents/tools/db.py). Note `get_transactions` authorizes by **looking up the row's owner first**, then checking it against the caller — object-level authZ, not just input validation.
+
+**Azure wiring:** back the tool with a **least-privilege Postgres role** (read-only, no DDL) and enforce **Row-Level Security** in the database so the control survives even a buggy query:
+
+```sql
+CREATE ROLE zava_app LOGIN; GRANT SELECT ON accounts, transactions, credit_scores TO zava_app;
+ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY own_rows ON accounts USING (customer_id = current_setting('app.customer_id'));
+```
+
+The app connects as `zava_app` (never the admin), and sets `app.customer_id` from the **validated** identity (Module 5), so RLS enforces ownership in the engine itself — defense in depth behind `_authorize`.
+
+#### 2. Human-in-the-loop on irreversible actions
+
+`transfer_funds` is state-changing and irreversible, so the secure path **refuses to execute until a human approves**:
+
+```python
+if settings.enable_hitl and not approved:
+    raise ToolError("transfer_funds requires human approval (HITL) before execution.")
+```
+
+The Transactions agent ([src/agents/transactions/](../src/agents/transactions/)) returns `requires_approval` with the proposed action; the client must re-submit with `approved_action` set. The tool *also* rejects an unapproved call directly — so a confused or compromised agent can't skip the gate. In the Agent Framework this is a **function-approval / interrupt** step; the refusal in the tool is the defense-in-depth backstop.
+
+#### 3. MCP tool scoping — a remote tool server is an untrusted dependency
+
+MCP moves the trust boundary: the agent now runs whatever a *remote* server advertises. The secure transport in [src/agents/tools/mcp.py](../src/agents/tools/mcp.py) layers **three** checks, then marks output untrusted:
+
+```python
+if settings.enable_mcp_tool_security:
+    if not server_url or not _is_trusted(server_url):        # 1) pin/approve the server
+        raise MCPToolError(f"Refusing untrusted MCP server '{server_url}'.")
+    if name not in allowed_tools():                          # 2) per-agent allow-list
+        raise MCPToolError(f"MCP tool '{name}' is not on this agent's allow-list.")
+    kwargs.setdefault("caller_id", ctx.customer_id)          # 3) scope to the caller (OBO)
+    data = _DISPATCH[name](**kwargs)
+    return {"tool": name, "data": data, "untrusted": True}   # 4) output is untrusted -> re-scan
+```
+
+So even though the server *advertises* `transfer_funds`, an allow-list of `get_accounts,get_transactions,get_credit_score` means the Accounts agent can never invoke it over MCP (T2). And because the result is tagged `untrusted`, `scan_tool_output` runs Prompt Shields + PII over it before the model sees it (T12 — a poisoned tool result is just another indirect injection).
+
+**Azure wiring:** attach the **Azure Database for PostgreSQL MCP server** as a *hosted MCP tool* on the Foundry agent, register only that pinned endpoint, pass a **scoped read-only OBO identity** (Module 5) rather than the admin connection string, and configure the per-agent tool allow-list on the agent.
+
+#### 4. Secure code execution — sandbox the reporting interpreter
+
+The reporting agent runs **model-generated code**. The baseline `exec`s it with full builtins; the secure path AST-validates first and runs with a minimal builtin set ([src/agents/tools/report.py](../src/agents/tools/report.py)):
+
+```python
+def _validate_ast(code: str) -> None:
+    for node in ast.walk(ast.parse(code)):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            raise CodeExecutionError("Imports are not permitted in the sandbox.")
+        if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
+            raise CodeExecutionError("Dunder attribute access is not permitted.")
+        if isinstance(node, ast.Name) and node.id in _BLOCKED_NAMES:   # os, eval, open, subprocess...
+            raise CodeExecutionError(f"Use of '{node.id}' is not permitted.")
+```
+
+**Azure wiring:** don't ship your own sandbox in production — hand the code to the **Foundry-hosted Code Interpreter** tool, which gives you an isolated container with **no outbound network, an ephemeral filesystem, and CPU/time limits**. The AST gate here is the offline approximation so the control is testable without Azure.
+
+#### Design notes
+
+- **Least privilege is layered:** app-level `_authorize` *and* a read-only role *and* RLS. Any one can fail; together they hold.
+- **Allow-list at the agent, not the server:** the server may legitimately expose `transfer_funds` for the Transactions agent — scoping is per-*caller*, so each agent gets only the tools its job needs.
+- **All non-local input is untrusted:** documents (M2), tool output, and MCP responses all flow through the same guard. That uniformity is the whole design.
+
+#### See the before/after
 
 ```bash
 # .env
@@ -408,13 +624,6 @@ ENABLE_HITL=true                 # transfer_funds returns an approval request fi
 ENABLE_MCP_TOOL_SECURITY=true    # pinned server + tool allow-list + output marked untrusted
 ENABLE_CODE_SANDBOX=true         # reporting code interpreter blocks imports / IO
 ```
-
-- **DB** ([src/agents/tools/db.py](../src/agents/tools/db.py)): least-privilege role, parameterized queries, and `_authorize(caller_id, customer_id)` enforce row-level access.
-- **HITL** ([src/agents/transactions/](../src/agents/transactions/)): `transfer_funds` returns `requires_approval` until the client re-submits with `approved_action`.
-- **MCP** ([src/agents/tools/mcp.py](../src/agents/tools/mcp.py)): only **pinned/approved** servers, an explicit per-agent **allow-list** (so `transfer_funds` over MCP is refused), and output tagged `untrusted` so `scan_tool_output` re-scans it.
-- **Code** ([src/agents/tools/report.py](../src/agents/tools/report.py)): the sandbox blocks imports, file/network IO, and bounds runtime.
-
-In Azure, attach the Postgres data tools as the **Azure Database for PostgreSQL MCP server** (a hosted MCP tool on the Foundry agent) and run the reporting step on the **Foundry-hosted Code Interpreter**.
 
 ### Verify
 
@@ -462,19 +671,60 @@ pytest src/tests/test_vulnerabilities.py::test_v5_no_trimming_exposes_restricted
 
 ### Remediate (needs tenant rights — fallback provided)
 
-1. **Entra OBO.** Replace body-supplied identity with a validated token. The API validates the bearer token and derives `customer_id`/`groups` from claims, then exchanges it **On-Behalf-Of** for downstream scopes. Toggle:
+The root cause is **trusting client-supplied identity**. The fix is to derive identity from a *validated token*, then carry that identity all the way down to the data.
 
-   ```bash
-   ENABLE_OBO=true
-   ```
+#### (a) The secure design & code — document-level trimming
 
-2. **Document-level security trimming.** Filter AI Search results by the caller's Entra `group_ids` using `search.in()` — see [src/agents/tools/search.py](../src/agents/tools/search.py):
+Even before Entra, the testable core is **trimming RAG results by the caller's groups**. `search_documents` in [src/agents/tools/search.py](../src/agents/tools/search.py) returns a chunk only if the caller's Entra groups intersect the doc's `group_ids`:
 
-   ```bash
-   ENABLE_DOC_SECURITY=true
-   ```
+```python
+if settings.enable_doc_security:
+    # Mirrors AI Search:  group_ids/any(g: search.in(g, '<caller groups>'))
+    groups = set(caller_groups or [])
+    results = [d for d in results
+               if not d["group_ids"] or groups.intersection(d["group_ids"])]
+# LAB-VULN(V5): otherwise every chunk is returned to every caller.
+```
 
-3. **Secrets → Key Vault**, **managed identity** for service-to-service, **least-privilege RBAC** instead of Owner/Contributor.
+The critical detail: `caller_groups` must come from a **validated token**, never the request body. Trimming on spoofable groups is theater.
+
+#### (b) The Azure wiring — Entra OBO + AI Search filter
+
+**1. Validate the token and exchange it On-Behalf-Of.** The API validates the bearer token, derives `customer_id`/`groups` from claims, then exchanges it for a downstream scope so calls to Postgres/Search run **as the user**, not a shared service principal:
+
+```python
+# OBO: trade the user's token for a downstream-scoped token
+cred = OnBehalfOfCredential(tenant_id, client_id, client_secret,
+                            user_assertion=incoming_user_token)
+token = cred.get_token("https://search.azure.com/.default")
+```
+
+**2. Trim AI Search by Entra object/group IDs** using the `search.in()` filter pattern the offline code mirrors:
+
+```http
+POST /indexes/zava-docs/docs/search?api-version=2024-07-01
+{ "search": "savings rates",
+  "filter": "group_ids/any(g: search.in(g, '<caller-group-guids>', ','))" }
+```
+
+**3. Secrets and service identity.** Move every secret to **Key Vault** (referenced via managed identity), use **managed identities** for service-to-service calls, and replace Owner/Contributor with **least-privilege RBAC** (e.g. `Search Index Data Reader`, not `Search Service Contributor`).
+
+#### (c) Design notes
+
+- **Identity flows end-to-end.** OBO is what makes Postgres RLS (Module 4) and Search trimming actually *mean* something — the same validated principal reaches every layer.
+- **Trim server-side.** Filter inside AI Search with `search.in()`; never fetch-all-then-filter in the app (you'd still pay to retrieve restricted docs and could leak them on error).
+- **Least privilege for services too.** A managed identity with reader-only data-plane roles limits blast radius if the app is compromised.
+
+#### See the before/after
+
+- **Entra OBO** — `ENABLE_OBO=true` swaps body-supplied identity for token-derived claims.
+- **Document trimming** — `ENABLE_DOC_SECURITY=true` (fully testable offline).
+
+```bash
+# .env
+ENABLE_OBO=true
+ENABLE_DOC_SECURITY=true
+```
 
 <div class="important" data-title="No tenant admin?">
 
@@ -520,21 +770,58 @@ pytest src/tests/test_vulnerabilities.py::test_v10_direct_exposure_when_disabled
 
 ### Remediate
 
-Front Foundry model endpoints **and** MCP/tool endpoints with **Azure API Management as an AI gateway** (provisioned in [src/infra/apim.tf](../src/infra/apim.tf)). Enable:
+The pattern is **one governed choke point** in front of every model and tool endpoint, so auth, throttling, key custody, and logging are enforced in *one* place instead of scattered through app code.
+
+#### (a) The secure design & code
+
+The gateway shim ([src/agents/gateway/gateway.py](../src/agents/gateway/gateway.py)) models the four APIM policies as one decision: reject unauthenticated calls, enforce a token budget, hide the key, and report what's left:
+
+```python
+def route_call(*, estimated_tokens: int, authenticated: bool) -> GatewayDecision:
+    settings = get_settings()
+    if not settings.enable_ai_gateway:                      # LAB-VULN(V10): direct exposure
+        return GatewayDecision(allowed=True, routed_via_gateway=False,
+                               key_exposed_to_client=True, tokens_remaining=None)
+    if not authenticated:
+        raise GatewayError("AI gateway rejected an unauthenticated request.")
+    if _tokens_used + estimated_tokens > settings.ai_gateway_token_limit:
+        raise GatewayError("AI gateway token limit exceeded.")   # bounds spend (LLM10 / T4)
+    # ... account tokens, key stays inside the gateway ...
+    return GatewayDecision(allowed=True, routed_via_gateway=True,
+                           key_exposed_to_client=False, tokens_remaining=remaining)
+```
+
+The key property: `key_exposed_to_client` flips to `False` because the model key now lives **inside APIM**, never in the app or the browser.
+
+#### (b) The Azure wiring
+
+APIM is provisioned in [src/infra/apim.tf](../src/infra/apim.tf). The two policies that make it an *AI* gateway:
+
+```xml
+<!-- Validate the Entra/OBO token centrally -->
+<validate-azure-ad-token tenant-id="{{tenant}}"><audiences><audience>{{api}}</audience></audiences></validate-azure-ad-token>
+<!-- Token-based rate limiting (GenAI) -->
+<azure-openai-token-limit counter-key="@(context.Subscription.Id)"
+    tokens-per-minute="20000" estimate-prompt-tokens="true" />
+```
+
+The app's model client points at the **APIM endpoint** with a managed identity; APIM injects the real key from **named values / Key Vault** and logs every request/response to **Monitor / Log Analytics**.
+
+**Secure runtime (V7)** wraps this with **private endpoints / VNet** (no public model/tool surface), **Defender for Cloud** AI threat protection, the **diagnostic settings** already wired in [src/infra/monitoring.tf](../src/infra/monitoring.tf), and safe error handling (no stack traces to clients).
+
+#### (c) Design notes
+
+- **Token-based, not request-based, limiting.** GenAI cost is per-token; a per-request limit doesn't stop one giant prompt from blowing the budget.
+- **Centralize so you can't forget.** A key in app config leaks eventually; a key only APIM holds can't.
+- **Caching is a bonus control.** APIM semantic caching cuts cost *and* reduces the attack surface for repeated adversarial probing.
+
+#### See the before/after
 
 ```bash
+# .env
 ENABLE_AI_GATEWAY=true
 ENABLE_SECURE_RUNTIME=true
 ```
-
-The gateway shim ([src/agents/gateway/gateway.py](../src/agents/gateway/gateway.py)) models the APIM policies offline:
-
-- **Central authN/Z** — unauthenticated calls are rejected.
-- **Token-based rate limiting** — a GenAI token-limit policy bounds spend; over-budget calls fail.
-- **Key vaulting** — the model key stays inside APIM (`key_exposed_to_client=False`).
-- **Logging** — every request/response is traceable.
-
-Secure runtime adds **private endpoints / VNet**, **Defender for Cloud** AI threat protection, **Monitor / Log Analytics** auditing (already wired in [src/infra/monitoring.tf](../src/infra/monitoring.tf)), and safe error handling.
 
 ### Verify
 
@@ -600,14 +887,46 @@ Untrusted ingestion lets poisoned content into the RAG index, and the model make
 
 ### Remediate
 
-- **Trusted ingestion + content validation** before indexing.
-- **Groundedness detection** flags answers not supported by retrieved sources:
+Two complementary controls: stop poison getting **in** (ingestion), and catch unsupported claims on the way **out** (groundedness).
 
-  ```bash
-  ENABLE_GROUNDEDNESS=true
-  ```
+#### (a) The secure design & code
 
-  See `check_groundedness` in [src/agents/guard/guard.py](../src/agents/guard/guard.py); Azure AI Content Safety Groundedness detection replaces the heuristic in Azure.
+`check_groundedness` in [src/agents/guard/guard.py](../src/agents/guard/guard.py) scores whether the answer's sentences are actually supported by the retrieved sources, and flags low-support answers:
+
+```python
+def check_groundedness(answer: str, sources: list[str]) -> bool:
+    if not get_settings().enable_groundedness:
+        return True  # LAB-VULN(V6): no groundedness verification
+    corpus = " ".join(sources).lower()
+    sentences = [s for s in re.split(r"[.!?]\s+", answer) if len(s.split()) > 4]
+    supported = sum(1 for s in sentences
+                    if any(tok in corpus for tok in s.lower().split() if len(tok) > 5))
+    return supported / len(sentences) >= 0.5
+```
+
+#### (b) The Azure wiring
+
+- **Trusted ingestion.** Validate/scan documents *before* indexing (provenance check, Prompt Shields `documents` scan, sensitivity-label gate) so a poisoned doc never enters the AI Search index in the first place.
+- **Groundedness detection.** Replace the heuristic with **Azure AI Content Safety Groundedness detection**, which returns ungrounded spans and (optionally) a correction. Bind it as a Foundry agent guardrail so every RAG answer is scored.
+
+```python
+result = content_safety.detect_groundedness(
+    text=answer, grounding_sources=retrieved_chunks, domain="Generic")
+if result.ungrounded_detected:
+    answer = result.ungrounded_correction  # or refuse / cite
+```
+
+#### (c) Design notes
+
+- **Groundedness is the safety net behind Prompt Shields.** If an injection slips through (M2), an ungrounded "wire funds now" answer still fails the support check.
+- **Prevent at ingestion, detect at output.** Relying only on output checks means you keep paying to retrieve poisoned content; gate ingestion too.
+
+#### See the before/after
+
+```bash
+# .env
+ENABLE_GROUNDEDNESS=true
+```
 
 ### Verify
 
