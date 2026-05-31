@@ -69,6 +69,11 @@ The **Add the Azure layer** step is the heart of every module. You don't just fl
 
 Zava is a **multi-agent app** (an orchestrator routing to four specialist agents) wrapped — in Part 2 — by **layers of Azure security controls**. Read this one picture and the whole lab clicks into place: every vulnerability **Vn** is just a missing control at one specific point in the request path.
 
+![Zava architecture: a request flows from the client through the platform edge (APIM, Entra ID) and input guards (Content Safety, Prompt Shields, PII redaction) into the multi-agent app (Orchestrator routing to Accounts, Transactions, Knowledge/RAG, Reporting), which calls the tools & data plane (Postgres/SQLite, MCP tools, AI Search, Code interpreter, Foundry model), then back out through the output guards (Groundedness, PII redaction). Each box is labelled with the vulnerability it closes, V1–V10.](assets/diagrams/architecture.png)
+
+<details>
+<summary>Mermaid source for the diagram above (for editing/regenerating)</summary>
+
 ```mermaid
 flowchart LR
     U["🧑 Client · Chat UI"]
@@ -118,6 +123,10 @@ flowchart LR
     ORCH --> MODEL
     APP --> OUT --> U
 ```
+
+> Regenerate with: `npx -p @mermaid-js/mermaid-cli mmdc -i docs/assets/diagrams/architecture.mmd -o docs/assets/diagrams/architecture.png -b white -s 3`
+
+</details>
 
 **How to read it:** a request flows **top → bottom** through the platform edge, the input guards, the agents (which call tools, data and the model), then the output guards on the way back. In the **vulnerable baseline every box except the agents is missing** — that's V1–V10. Each Part-2 module adds one box back.
 
