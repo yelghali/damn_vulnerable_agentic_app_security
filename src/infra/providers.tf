@@ -17,6 +17,10 @@ terraform {
 }
 
 provider "azurerm" {
+  # Use Entra (AAD) for the storage data plane. This subscription's policy
+  # denies shared-key auth, so container operations must go through AAD.
+  storage_use_azuread = true
+
   features {
     key_vault {
       # Lab convenience only: lets `terraform destroy` fully clean up. Do NOT

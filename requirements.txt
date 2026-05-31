@@ -4,11 +4,15 @@
 # ---------------------------------------------------------------------------
 
 # --- Multi-agent orchestration (the APP) ---
-agent-framework==1.0.0b251125            # Microsoft Agent Framework (multi-agent, middleware, HITL)
+agent-framework>=1.0.0b251001            # Microsoft Agent Framework (multi-agent, middleware, HITL)
 
 # --- Azure AI Foundry project SDK (project, models, agents, evals) ---
 azure-ai-projects>=2.0.0
 azure-identity>=1.19.0
+
+# --- Local SLM backend for offline mode (real model, no Azure) ---
+openai>=1.54.0                            # OpenAI-compatible client (Foundry Local / Ollama / Azure)
+foundry-local-sdk>=0.1.0                  # Microsoft Foundry Local: run a real SLM locally, free
 
 # --- Azure AI security building blocks ---
 azure-ai-contentsafety>=1.0.0            # Content Safety + Prompt Shields (V1/V2)

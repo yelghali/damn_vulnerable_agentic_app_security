@@ -131,6 +131,13 @@ Each vulnerability maps to **OWASP Top 10 for LLM Apps (2025)**, the **OWASP Age
 
 ## 5. Lab modules (workshop.md sections)
 
+The lab is told as **two coherent parts**:
+
+- **Part 1 · Understand the vulnerabilities (run locally).** Replaces the old "Module 0". A single local-only walkthrough where the participant runs the app on their laptop (seeded SQLite + local SLM, **no Azure**) and **exploits all of V1–V10 through the chat UI**. Ends with a "what you'll fix in Part 2" map. This is the consolidated "exploit" track.
+- **Part 2 · Add the Azure security layers.** Modules 1–11 + capstone. Each module adds **one named Azure security layer** over the baseline and re-runs a Part 1 exploit to prove it's dead. Module headers are named after the Azure layer they add (e.g. "Module 1 — Foundry guardrails", "Module 5 — Entra ID identity & AI Search document security", "Module 6 — APIM AI gateway, observability, rate limiting & Defender"). Part 2 = the old Core track (Modules 1–6, no tenant admin) + Extended track (Modules 7–11 + capstone).
+
+Per-module loop in **Part 2**: *Scenario → Recall the exploit → Why it's dangerous (OWASP/MS mapping) → **Add the Azure layer** (design · secure code · Azure wiring) → Verify → MS Learn references.* The **Add the Azure layer** section is wrapped in a `<details>` and structured as **(a) secure design & code**, **(b) Azure wiring**, **(c) design notes / trade-offs**, then the `ENABLE_*` toggle (offline before/after switch only).
+
 ### Core track (half-day, ~4 h) — fully code/Terraform-deployable, no tenant admin
 
 | M | Title | Vulns | OWASP / Agentic | ~Time |

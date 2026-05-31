@@ -20,6 +20,11 @@ resource "azurerm_cognitive_account" "ai" {
   # Required for token-based (Entra) auth + model deployments.
   custom_subdomain_name = "aif-${local.base}"
 
+  # Foundry projects require allowProjectManagement = true on the account.
+  # Set it here (the provider manages this property); the azapi_update below is
+  # kept as a belt-and-braces patch for older provider versions.
+  project_management_enabled = true
+
   # Local (key) auth stays enabled in the baseline; secure mode forces Entra.
   local_auth_enabled = var.secure_mode ? false : true
 
@@ -31,6 +36,20 @@ resource "azurerm_cognitive_account" "ai" {
   }
 
   tags = local.tags
+}
+
+# Foundry projects can only be created when the AIServices account has
+# allowProjectManagement = true. azurerm doesn't expose this property yet, so
+# patch it onto the account via azapi before the project is created.
+resource "azapi_update_resource" "ai_allow_projects" {
+  type        = "Microsoft.CognitiveServices/accounts@2025-04-01-preview"
+  resource_id = azurerm_cognitive_account.ai.id
+
+  body = {
+    properties = {
+      allowProjectManagement = true
+    }
+  }
 }
 
 # --- Governed deployment: default content filters (secure reference) ---------
@@ -53,7 +72,12 @@ resource "azurerm_cognitive_deployment" "governed" {
 # --- Custom RAI policy with filters OFF (simulates the ungoverned model) ------
 # LAB-VULN(V1): this policy disables the harmful-content filters. It exists only
 # to make the "before" state reproducible and is never used by the secure app.
+# Disabling base content filters requires an approved modified-content-filter
+# exception on the subscription (aka.ms/oai/rai/exceptions). Many sponsored /
+# managed subscriptions don't have it, so this is gated off by default. The V1
+# "unsafe model" demo is also reproducible in OFFLINE_MODE without Azure.
 resource "azapi_resource" "rai_ungoverned" {
+  count     = var.enable_ungoverned_model ? 1 : 0
   type      = "Microsoft.CognitiveServices/accounts/raiPolicies@2024-10-01"
   name      = "ungoverned"
   parent_id = azurerm_cognitive_account.ai.id
@@ -63,12 +87,12 @@ resource "azapi_resource" "rai_ungoverned" {
       basePolicyName = "Microsoft.DefaultV2"
       mode           = "Default"
       contentFilters = [
-        for cat in ["Hate", "Sexual", "Violence", "Selfharm"] : {
-          name                = cat
-          blocking            = false
-          enabled             = false
-          allowedContentLevel = "High"
-          source              = "Prompt"
+        for entry in setproduct(["Hate", "Sexual", "Violence", "Selfharm"], ["Prompt", "Completion"]) : {
+          name              = entry[0]
+          blocking          = false
+          enabled           = false
+          severityThreshold = "High"
+          source            = entry[1]
         }
       ]
     }
@@ -79,9 +103,10 @@ resource "azapi_resource" "rai_ungoverned" {
 
 # --- Ungoverned deployment: attaches the filters-off policy ------------------
 resource "azurerm_cognitive_deployment" "ungoverned" {
+  count                = var.enable_ungoverned_model ? 1 : 0
   name                 = "gpt-ungoverned"
   cognitive_account_id = azurerm_cognitive_account.ai.id
-  rai_policy_name      = azapi_resource.rai_ungoverned.name
+  rai_policy_name      = azapi_resource.rai_ungoverned[0].name
 
   model {
     format  = "OpenAI"
@@ -101,6 +126,8 @@ resource "azapi_resource" "project" {
   name      = "proj-${local.base}"
   parent_id = azurerm_cognitive_account.ai.id
   location  = azurerm_resource_group.rg.location
+
+  depends_on = [azapi_update_resource.ai_allow_projects]
 
   identity {
     type = "SystemAssigned"

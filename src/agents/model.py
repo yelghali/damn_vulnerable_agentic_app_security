@@ -1,25 +1,41 @@
 """Model client abstraction.
 
-* ``OFFLINE_MODE=true`` uses a deterministic, rules-based stub so the whole app
-  and every vulnerability/mitigation are demonstrable + testable without Azure.
-  The stub deliberately *follows the active system prompt*: under the vulnerable
-  prompt it will leak instructions / go off-topic; under the hardened prompt it
-  refuses — so the before/after is visible offline.
+The lab runs the **same agent code** against one of two model backends; which
+one is just configuration, so there is a single code path to reason about:
 
-* In Azure mode the same surface is backed by the **Azure AI Foundry project
-  SDK** (``AIProjectClient.get_openai_client()``) and orchestrated with the
-  **Microsoft Agent Framework**. That path is constructed lazily so offline
-  runs need no Azure SDKs or credentials.
+* **Local SLM** (``OFFLINE_MODE=true``, the default) — a real **small language
+  model** served locally through an OpenAI-compatible endpoint. The default
+  runtime is **Microsoft Foundry Local** (``foundry model run phi-3.5-mini``),
+  which exposes the *same* OpenAI client surface as Azure AI Foundry, so the
+  app talks to it with zero Azure resources and zero cost. Any OpenAI-compatible
+  server works too (e.g. Ollama at ``http://localhost:11434/v1``).
+
+* **Azure AI Foundry** (``OFFLINE_MODE=false``) — the same call goes to a real
+  Foundry model deployment via the **Azure AI Foundry project SDK**
+  (``AIProjectClient.get_openai_client()``), orchestrated with the
+  **Microsoft Agent Framework**.
+
+If the local SLM endpoint is not reachable (e.g. CI, or Foundry Local isn't
+running yet) the client falls back to a tiny deterministic stub so the app and
+the offline test-suite still work. The security controls themselves live in the
+*guards* and *tools* (deterministic), so the before/after behaviour is enforced
+regardless of which backend answers.
 """
 
 from __future__ import annotations
 
+import logging
+from functools import lru_cache
+
 from src.config import get_settings
+
+logger = logging.getLogger("zava.model")
 
 
 def _stub_compose(system_prompt: str, user_message: str, context: str) -> str:
-    """Deterministic offline 'model'. Honors the active system prompt so the
-    vulnerable vs. secure behavior is reproducible in tests."""
+    """Deterministic fallback 'model' used only when no SLM endpoint is
+    reachable. Honors the active system prompt so vulnerable vs. secure
+    behaviour stays reproducible in tests/CI."""
     low = user_message.lower()
     hardened = "never reveal" in system_prompt.lower()
 
@@ -43,9 +59,82 @@ def _stub_compose(system_prompt: str, user_message: str, context: str) -> str:
     )
 
 
+@lru_cache
+def _local_client() -> tuple[object, str] | None:
+    """Build an OpenAI-compatible client for the local SLM, or return ``None``
+    if neither Foundry Local nor a configured endpoint is available.
+
+    Resolution order:
+      1. Foundry Local via ``foundry-local-sdk`` (auto-discovers endpoint+model).
+      2. ``LOCAL_MODEL_ENDPOINT`` (any OpenAI-compatible server, incl. Ollama).
+    """
+    settings = get_settings()
+
+    # 1) Foundry Local SDK — best experience, auto-starts the service.
+    if not settings.local_model_endpoint:
+        try:
+            from foundry_local import FoundryLocalManager  # type: ignore  # noqa: PLC0415
+            from openai import OpenAI  # noqa: PLC0415
+
+            manager = FoundryLocalManager(settings.local_model_name)
+            model_info = manager.get_model_info(settings.local_model_name)
+            client = OpenAI(base_url=manager.endpoint, api_key=manager.api_key or "not-needed")
+            logger.info("model: using Foundry Local (%s)", model_info.id)
+            return client, model_info.id
+        except Exception:  # SDK missing / service unavailable -> try endpoint.
+            pass
+
+    # 2) Explicit OpenAI-compatible endpoint (Foundry Local fixed port, Ollama…).
+    if settings.local_model_endpoint:
+        try:
+            from openai import OpenAI  # noqa: PLC0415
+
+            client = OpenAI(
+                base_url=settings.local_model_endpoint,
+                api_key=settings.local_model_key or "not-needed",
+            )
+            logger.info(
+                "model: using local SLM endpoint %s (%s)",
+                settings.local_model_endpoint,
+                settings.local_model_name,
+            )
+            return client, settings.local_model_name
+        except Exception:
+            logger.warning("model: local SLM endpoint configured but openai client unavailable")
+
+    return None
+
+
+def _call_local_slm(system_prompt: str, user_message: str, context: str) -> str | None:
+    """Call the local SLM; return ``None`` on any failure so the caller can
+    fall back to the deterministic stub (keeps the app + CI working offline)."""
+    built = _local_client()
+    if built is None:
+        return None
+    client, model_name = built
+    try:
+        completion = client.chat.completions.create(  # type: ignore[attr-defined]
+            model=model_name,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"{user_message}\n\nContext:\n{context}"},
+            ],
+            temperature=0.2,
+            max_tokens=400,
+        )
+        return completion.choices[0].message.content or ""
+    except Exception as exc:  # network / model error -> graceful fallback.
+        logger.warning("model: local SLM call failed (%s); using stub fallback", exc)
+        return None
+
+
 def compose_answer(system_prompt: str, user_message: str, context: str = "") -> str:
     settings = get_settings()
+
     if settings.offline_mode:
+        answer = _call_local_slm(system_prompt, user_message, context)
+        if answer is not None:
+            return answer
         return _stub_compose(system_prompt, user_message, context)
 
     # --- Azure AI Foundry + Microsoft Agent Framework path -----------------

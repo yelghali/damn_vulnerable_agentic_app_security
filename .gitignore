@@ -28,6 +28,8 @@ src/data/*.sqlite
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+tfplan
+*.tfplan
 crash.log
 
 # --- Eval / red-team output ---

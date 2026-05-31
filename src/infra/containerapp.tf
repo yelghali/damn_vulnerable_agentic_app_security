@@ -1,0 +1,119 @@
+# ---------------------------------------------------------------------------
+# Azure MCP Server (Microsoft) — the "PostgreSQL tool" for Foundry agents.
+#
+# Foundry's `mcp` tool only accepts a REMOTE MCP endpoint, so we self-host the
+# **Microsoft Azure MCP Server** on Azure Container Apps and expose only the
+# PostgreSQL namespace. It is built on the Azure SDK for .NET and authenticates
+# to Azure with Microsoft Entra ID (the container's managed identity), so no
+# Google / third-party SDK is involved.
+#
+# Image          : mcr.microsoft.com/azure-sdk/azure-mcp  (Microsoft published)
+# Postgres tools : postgres list | database query | table schema get |
+#                  server config/param get | server param set
+# Docs           : "Deploy a self-hosted remote Azure MCP Server and connect to
+#                  it using Microsoft Foundry" + "Azure Database for PostgreSQL
+#                  tools for the Azure MCP Server".
+#
+# NOTE: the image ENTRYPOINT is fixed to `./server-binary server start`. Azure
+# Container Apps `args` are APPENDED to that entrypoint (they do not replace it),
+# which is the supported way to add `--transport http`, `--namespace postgres`,
+# etc.
+#
+# Security framing for the lab:
+#   * Outgoing auth uses the Container App's managed identity
+#     (UseHostingEnvironmentIdentity) — give it least-privilege RBAC (V4/V8).
+#   * Baseline disables incoming HTTP auth for simplicity (deliberately weak —
+#     a hardened deployment would front it with Entra app auth and use the
+#     Foundry project's managed identity as the audience).
+#   * The Foundry MCP tool `allowed_tools` allow-list + `require_approval`
+#     (set by provision_foundry_agents.py) provide the V9 / V4 controls.
+# ---------------------------------------------------------------------------
+
+resource "azurerm_container_app_environment" "mcp" {
+  count                      = var.deploy_mcp_toolbox ? 1 : 0
+  name                       = "cae-${local.base}"
+  location                   = azurerm_resource_group.rg.location
+  resource_group_name        = azurerm_resource_group.rg.name
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
+  tags                       = local.tags
+}
+
+resource "azurerm_container_app" "mcp_toolbox" {
+  count                        = var.deploy_mcp_toolbox ? 1 : 0
+  name                         = "ca-azmcp-${local.base}"
+  container_app_environment_id = azurerm_container_app_environment.mcp[0].id
+  resource_group_name          = azurerm_resource_group.rg.name
+  revision_mode                = "Single"
+  tags                         = local.tags
+
+  # System-assigned managed identity is how the Azure MCP Server authenticates
+  # to Azure (Entra ID) for all outgoing PostgreSQL / ARM requests.
+  identity {
+    type = "SystemAssigned"
+  }
+
+  template {
+    # Keep one warm replica so Foundry MCP calls don't hit a cold start
+    # (the MCP tool has a 100s non-streaming timeout).
+    min_replicas = 1
+    max_replicas = 1
+
+    container {
+      name   = "azure-mcp"
+      image  = var.mcp_toolbox_image
+      cpu    = 0.5
+      memory = "1Gi"
+
+      # Appended to the image entrypoint (`server start`):
+      #   --transport http          -> remote MCP over the ACA ingress
+      #   --namespace postgres ...   -> expose only DB-related tools
+      #   --outgoing-auth-strategy   -> use this container's managed identity
+      #   --dangerously-disable-http-incoming-auth -> lab simplicity (see note)
+      args = [
+        "--transport", "http",
+        "--namespace", "postgres",
+        "--namespace", "group",
+        "--namespace", "subscription",
+        "--outgoing-auth-strategy", "UseHostingEnvironmentIdentity",
+        "--dangerously-disable-http-incoming-auth",
+      ]
+
+      # The .NET server honours ASPNETCORE_URLS for its listen port.
+      env {
+        name  = "ASPNETCORE_URLS"
+        value = "http://+:8080"
+      }
+      env {
+        name  = "AZURE_SUBSCRIPTION_ID"
+        value = data.azurerm_client_config.current.subscription_id
+      }
+    }
+  }
+
+  ingress {
+    external_enabled = true
+    target_port      = 8080
+    transport        = "http"
+
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+
+  depends_on = [
+    azurerm_postgresql_flexible_server_database.zava,
+    azurerm_postgresql_flexible_server_firewall_rule.allow_azure,
+  ]
+}
+
+# Least-privilege RBAC for the Azure MCP Server's managed identity: Reader on the
+# resource group so it can enumerate the PostgreSQL server / databases / tables.
+# (Data-plane SQL queries additionally require the identity to be a PostgreSQL
+# Entra role, or the agent to supply DB credentials — see workshop notes.)
+resource "azurerm_role_assignment" "mcp_reader" {
+  count                = var.deploy_mcp_toolbox ? 1 : 0
+  scope                = azurerm_resource_group.rg.id
+  role_definition_name = "Reader"
+  principal_id         = azurerm_container_app.mcp_toolbox[0].identity[0].principal_id
+}

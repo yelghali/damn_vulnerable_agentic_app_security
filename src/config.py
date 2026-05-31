@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     offline_mode: bool = Field(default=True, alias="OFFLINE_MODE")
     secure_mode: bool = Field(default=False, alias="SECURE_MODE")
 
+    # --- Local SLM (offline backend) ---------------------------------------
+    # In offline mode the app talks to a REAL small language model over an
+    # OpenAI-compatible endpoint. Default runtime is Microsoft Foundry Local
+    # (auto-discovered via foundry-local-sdk). Set LOCAL_MODEL_ENDPOINT to point
+    # at any OpenAI-compatible server instead (e.g. Ollama: http://localhost:11434/v1).
+    # If nothing is reachable the app falls back to a deterministic stub.
+    local_model_name: str = Field(default="phi-3.5-mini", alias="LOCAL_MODEL_NAME")
+    local_model_endpoint: str = Field(default="", alias="LOCAL_MODEL_ENDPOINT")
+    local_model_key: str = Field(default="", alias="LOCAL_MODEL_KEY")
+
     # --- Per-vulnerability toggles (None => inherit from secure_mode) -------
     enable_content_safety: bool | None = Field(default=None, alias="ENABLE_CONTENT_SAFETY")  # V1/V2
     enable_prompt_shields: bool | None = Field(default=None, alias="ENABLE_PROMPT_SHIELDS")  # V2
@@ -44,8 +54,8 @@ class Settings(BaseSettings):
     enable_ai_gateway: bool | None = Field(default=None, alias="ENABLE_AI_GATEWAY")          # V10
 
     # --- Tool transport ----------------------------------------------------
-    # When true the data tools are reached via an MCP server (the Azure
-    # Database for PostgreSQL MCP server) instead of local function calls.
+    # When true the data tools are reached via an MCP server (the Microsoft
+    # Azure MCP Server, postgres namespace) instead of local function calls.
     use_mcp_tools: bool = Field(default=False, alias="USE_MCP_TOOLS")
     pg_mcp_server_url: str = Field(default="", alias="PG_MCP_SERVER_URL")
     # Comma-separated allow-list of MCP tools each agent may call (secure mode).
@@ -63,6 +73,13 @@ class Settings(BaseSettings):
     foundry_ungoverned_deployment: str = Field(
         default="gpt-4o-mini-nofilter", alias="FOUNDRY_UNGOVERNED_DEPLOYMENT"
     )
+    # Provision persistent Foundry agents (so they appear in the portal Agents
+    # tab) instead of only calling chat completions. Driven by
+    # scripts/provision_foundry_agents.py.
+    provision_foundry_agents: bool = Field(default=False, alias="PROVISION_FOUNDRY_AGENTS")
+    # Foundry project connection names for the agent tools.
+    search_connection_name: str = Field(default="zava-search", alias="SEARCH_CONNECTION_NAME")
+    pg_mcp_connection_name: str = Field(default="zava-postgres-mcp", alias="PG_MCP_CONNECTION_NAME")
 
     # --- Content Safety / Language / Search --------------------------------
     content_safety_endpoint: str = Field(default="", alias="CONTENT_SAFETY_ENDPOINT")

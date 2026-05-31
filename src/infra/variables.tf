@@ -6,8 +6,8 @@ variable "prefix" {
 
 variable "location" {
   type        = string
-  default     = "eastus2"
-  description = "Azure region. Must have quota for the chosen model + PostgreSQL. Known-good: eastus2, swedencentral."
+  default     = "swedencentral"
+  description = "Azure region. Must have quota for the chosen model + PostgreSQL. Known-good: swedencentral, westus3. Note: eastus2 is offer-restricted for PostgreSQL on some subscriptions."
 }
 
 variable "model_name" {
@@ -31,7 +31,19 @@ variable "pg_admin_user" {
 variable "pg_admin_password" {
   type        = string
   sensitive   = true
-  description = "PostgreSQL administrator password. Provide via TF_VAR_pg_admin_password; never commit it."
+  description = "PostgreSQL administrator password. Provide via TF_VAR_pg_admin_password or terraform.tfvars; never commit it."
+}
+
+variable "entra_admin_object_id" {
+  type        = string
+  default     = ""
+  description = "Microsoft Entra object ID to set as the PostgreSQL Entra administrator. Empty = use the deploying identity (azurerm_client_config)."
+}
+
+variable "entra_admin_principal_name" {
+  type        = string
+  default     = ""
+  description = "Principal name (UPN) shown for the PostgreSQL Entra administrator. Should match the entra_admin_object_id identity."
 }
 
 variable "tags" {
@@ -101,4 +113,26 @@ variable "ungoverned_model_name" {
   type        = string
   default     = "gpt-4o-mini"
   description = "Model used for the V1 'ungoverned' deployment (content filters effectively disabled via a custom RAI policy)."
+}
+
+variable "enable_ungoverned_model" {
+  type        = bool
+  default     = false
+  description = "Create the V1 'ungoverned' (filters-off) RAI policy + deployment. Requires an approved modified-content-filter exception on the subscription (aka.ms/oai/rai/exceptions); off by default so deploy succeeds on restricted/sponsored subscriptions. The V1 demo also works in OFFLINE_MODE."
+}
+
+# ---------------------------------------------------------------------------
+# Azure MCP Server (Microsoft) — remote PostgreSQL MCP endpoint for Foundry
+# agents, hosted on Azure Container Apps (see containerapp.tf).
+# ---------------------------------------------------------------------------
+variable "deploy_mcp_toolbox" {
+  type        = bool
+  default     = true
+  description = "Deploy the Microsoft Azure MCP Server on Azure Container Apps as the remote PostgreSQL MCP endpoint that Foundry agents attach as their 'database' tool. One small always-on ACA replica; set false to skip it."
+}
+
+variable "mcp_toolbox_image" {
+  type        = string
+  default     = "mcr.microsoft.com/azure-sdk/azure-mcp:latest"
+  description = "Container image for the remote MCP server. Defaults to the Microsoft-published Azure MCP Server image."
 }

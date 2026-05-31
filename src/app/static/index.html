@@ -5,50 +5,129 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Zava Wealth Advisor</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 0; background: #0f1115; color: #e8e8e8; }
-    header { padding: 12px 20px; background: #1a1d24; border-bottom: 1px solid #2a2e37; }
-    header h1 { font-size: 16px; margin: 0; }
-    #banner { font-size: 12px; color: #9aa0aa; margin-top: 6px; }
-    #banner .on { color: #4ade80; }
-    #banner .off { color: #f87171; }
-    main { max-width: 840px; margin: 0 auto; padding: 16px; }
-    #log { min-height: 320px; }
-    .msg { padding: 10px 14px; border-radius: 10px; margin: 8px 0; white-space: pre-wrap; }
-    .user { background: #243047; align-self: flex-end; }
-    .bot { background: #1d2129; }
-    .events { font-size: 11px; color: #8b93a0; border-left: 2px solid #3a4150; padding-left: 8px; margin: 4px 0 12px; }
-    .blocked { border-left: 3px solid #f87171; }
-    form { display: flex; gap: 8px; margin-top: 12px; }
-    input[type=text] { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #2a2e37; background: #14171d; color: #e8e8e8; }
-    button { padding: 10px 16px; border: 0; border-radius: 8px; background: #3b82f6; color: white; cursor: pointer; }
-    .controls { font-size: 12px; color: #9aa0aa; margin-bottom: 8px; }
-    .controls input { width: 120px; }
-    #approval { background: #3a2e12; border: 1px solid #c08a2a; padding: 8px 12px; border-radius: 8px; margin-top: 8px; display: none; }
+    :root {
+      --bg: #0f1115; --panel: #161922; --panel-2: #1d2129; --border: #2a2e37;
+      --text: #e8e8e8; --muted: #9aa0aa; --accent: #6366f1; --accent-2: #3b82f6;
+      --on: #4ade80; --off: #f87171; --warn: #fbbf24;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+    header {
+      padding: 14px 22px; background: linear-gradient(90deg, #1a1d24, #20232d);
+      border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px;
+    }
+    .logo {
+      width: 34px; height: 34px; border-radius: 9px; flex: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      display: grid; place-items: center; font-weight: 800; color: white; font-size: 18px;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+    header .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .vuln-badge { color: var(--off); font-weight: 700; }
+    .secure-badge { color: var(--on); font-weight: 700; }
+    .layout { display: grid; grid-template-columns: 1fr 320px; gap: 18px; max-width: 1180px; margin: 18px auto; padding: 0 18px; }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }
+    .chat { display: flex; flex-direction: column; min-height: 70vh; }
+    .identity { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+    .identity input { padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border); background: #14171d; color: var(--text); width: 130px; }
+    .identity .pill { background: #243047; color: #cdd6ee; padding: 3px 8px; border-radius: 20px; }
+
+    #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 4px; }
+    .msg { padding: 10px 14px; border-radius: 12px; margin: 2px 0; white-space: pre-wrap; max-width: 88%; line-height: 1.45; font-size: 14px; }
+    .user { background: linear-gradient(135deg, #2b3a5e, #243047); align-self: flex-end; border-bottom-right-radius: 4px; }
+    .bot { background: var(--panel-2); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border); }
+    .bot.blocked { border-color: var(--off); }
+    .events { font-size: 11px; color: var(--muted); border-left: 2px solid #3a4150; padding: 6px 10px; margin: 0 0 10px; align-self: flex-start; max-width: 88%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .events .ev { display: block; }
+    .events .ev.warn { color: var(--warn); }
+    .events .ev.block { color: var(--off); }
+    .sources { font-size: 11px; color: var(--muted); align-self: flex-start; margin: -4px 0 10px; }
+    .sources a { color: var(--accent-2); }
+
+    #approval { background: #3a2e12; border: 1px solid #c08a2a; padding: 10px 14px; border-radius: 10px; margin: 0 16px 10px; display: none; font-size: 13px; }
+    #approval button { margin-left: 10px; }
+
+    form { display: flex; gap: 8px; padding: 14px 16px; border-top: 1px solid var(--border); }
+    input[type=text].msgbox { flex: 1; padding: 11px 12px; border-radius: 9px; border: 1px solid var(--border); background: #14171d; color: var(--text); font-size: 14px; }
+    button { padding: 10px 16px; border: 0; border-radius: 9px; background: var(--accent-2); color: white; cursor: pointer; font-size: 14px; font-weight: 600; }
+    button:hover { filter: brightness(1.08); }
+    button.ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); font-weight: 500; }
+
+    .side h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 10px; }
+    .side section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .side section:last-child { border-bottom: 0; }
+    .toggles { display: grid; grid-template-columns: 1fr; gap: 6px; }
+    .toggle { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-left: 8px; }
+    .dot.on { background: var(--on); box-shadow: 0 0 6px var(--on); }
+    .dot.off { background: var(--off); }
+    .chips { display: flex; flex-direction: column; gap: 7px; }
+    .chip {
+      text-align: left; background: #20131a; border: 1px solid #5b2433; color: #f7b9c5;
+      padding: 8px 10px; border-radius: 9px; font-size: 12px; cursor: pointer; line-height: 1.3;
+    }
+    .chip:hover { background: #2a1620; }
+    .chip .tag { display: inline-block; font-weight: 700; color: #ff7a90; margin-right: 5px; }
+    .chip.benign { background: #112019; border-color: #1f5b3a; color: #a7e8c6; }
+    .chip.benign .tag { color: #4ade80; }
+    .hint { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
   </style>
 </head>
 <body>
   <header>
-    <h1>Zava Wealth Advisor &mdash; <span style="color:#f87171">Damn Vulnerable Agentic App</span></h1>
-    <div id="banner">loading security posture&hellip;</div>
+    <div class="logo">Z</div>
+    <div>
+      <h1>Zava Wealth Advisor</h1>
+      <div class="sub" id="mode-sub">Damn Vulnerable Agentic App</div>
+    </div>
   </header>
-  <main>
-    <div class="controls">
-      Signed-in customer:
-      <input id="customer" type="text" value="CUST-1001" />
-      groups:
-      <input id="groups" type="text" value="retail-customers" />
+
+  <div class="layout">
+    <!-- Chat -->
+    <div class="card chat">
+      <div class="identity">
+        <span>Signed-in as</span>
+        <input id="customer" type="text" value="CUST-1001" title="customer_id sent to the API (no token validation in the baseline — V5)" />
+        <span>groups</span>
+        <input id="groups" type="text" value="retail-customers" />
+        <span class="pill" title="The baseline trusts these client-supplied values — that's vulnerability V5 (IDOR).">client-supplied &#9888;</span>
+      </div>
+
+      <div id="log"></div>
+
+      <div id="approval">
+        <span id="approval-text"></span>
+        <button id="approve-btn">Approve</button>
+        <button class="ghost" id="deny-btn">Deny</button>
+      </div>
+
+      <form id="form">
+        <input id="input" class="msgbox" type="text" autocomplete="off"
+               placeholder="Ask about your accounts, transactions, documents&hellip;" />
+        <button type="submit">Send</button>
+      </form>
     </div>
-    <div id="log"></div>
-    <div id="approval">
-      <span id="approval-text"></span>
-      <button id="approve-btn">Approve</button>
+
+    <!-- Side panel -->
+    <div class="card side">
+      <section>
+        <h3>Security posture</h3>
+        <div class="toggles" id="toggles">loading&hellip;</div>
+      </section>
+      <section>
+        <h3>Try an exploit &#128275;</h3>
+        <div class="chips" id="exploits"></div>
+        <div class="hint">In the <b>vulnerable</b> baseline these succeed. After you remediate each module (flip the toggle / harden the code), they should be blocked or redacted.</div>
+      </section>
+      <section>
+        <h3>Benign examples</h3>
+        <div class="chips" id="benign"></div>
+      </section>
     </div>
-    <form id="form">
-      <input id="input" type="text" autocomplete="off"
-             placeholder="Ask about your accounts, transactions, documents&hellip;" />
-      <button type="submit">Send</button>
-    </form>
-  </main>
+  </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

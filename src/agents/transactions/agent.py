@@ -12,7 +12,7 @@ from src.config import get_settings
 
 def _parse_transfer(message: str) -> dict | None:
     m = re.search(
-        r"transfer\s+\$?([\d.]+)\s+from\s+(ACC-\d+)\s+to\s+(ACC-\d+)",
+        r"transfer\s+\$?([\d.]+)\s*(?:usd|dollars?|eur|gbp)?\s+from\s+(ACC-\d+)\s+to\s+(ACC-\d+)",
         message,
         re.IGNORECASE,
     )

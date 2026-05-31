@@ -15,6 +15,11 @@ resource "azurerm_search_service" "search" {
   # baseline so the vulnerable app can use an admin key.
   local_authentication_enabled = var.secure_mode ? false : true
 
+  # Enable Entra (RBAC) auth alongside keys so the provisioning script and
+  # agents can use DefaultAzureCredential (keyless). Setting the failure mode
+  # switches the service from apiKeyOnly to aadOrApiKey.
+  authentication_failure_mode = "http403"
+
   # V7: lock the data plane down in secure mode.
   public_network_access_enabled = local.public_network_access
 
