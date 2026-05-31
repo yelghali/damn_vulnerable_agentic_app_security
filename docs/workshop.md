@@ -65,6 +65,69 @@ The **Add the Azure layer** step is the heart of every module. You don't just fl
 
 </div>
 
+## Architecture at a glance
+
+Zava is a **multi-agent app** (an orchestrator routing to four specialist agents) wrapped — in Part 2 — by **layers of Azure security controls**. Read this one picture and the whole lab clicks into place: every vulnerability **Vn** is just a missing control at one specific point in the request path.
+
+```mermaid
+flowchart TB
+    U["🧑 Client · Chat UI"]
+
+    subgraph EDGE["🛡️ Platform edge — added in Part 2"]
+      direction LR
+      APIM["APIM AI gateway<br/>rate-limit · key vaulting · audit · V10"]
+      ENTRA["Entra ID (OBO)<br/>real caller identity · V5"]
+    end
+
+    subgraph IN["🔍 Input guards"]
+      direction LR
+      CS["Content Safety · V1"]
+      PS["Prompt Shields · V2/V6"]
+      PIIin["PII redaction · V3"]
+    end
+
+    subgraph APP["🤖 Zava multi-agent app"]
+      direction LR
+      ORCH(["Orchestrator"])
+      ORCH --> ACC["Accounts"]
+      ORCH --> TX["Transactions"]
+      ORCH --> KN["Knowledge / RAG"]
+      ORCH --> RP["Reporting"]
+    end
+
+    subgraph DATA["🗄️ Tools & data plane"]
+      direction LR
+      DB[("Postgres / SQLite<br/>least-priv + RLS · V4")]
+      MCP["MCP tools<br/>scoped transport · V9"]
+      AIS[("AI Search<br/>doc-level ACL · V5")]
+      SAND["Code interpreter<br/>sandbox · V8"]
+      MODEL[["Foundry model<br/>governed deployment · V1/V2"]]
+    end
+
+    subgraph OUT["🔍 Output guards"]
+      direction LR
+      GND["Groundedness · V6"]
+      PIIout["PII redaction · V3"]
+    end
+
+    U --> APIM --> ENTRA --> IN --> ORCH
+    ACC --> DB
+    TX --> DB
+    TX --> MCP
+    KN --> AIS
+    RP --> SAND
+    ORCH --> MODEL
+    APP --> OUT --> U
+```
+
+**How to read it:** a request flows **top → bottom** through the platform edge, the input guards, the agents (which call tools, data and the model), then the output guards on the way back. In the **vulnerable baseline every box except the agents is missing** — that's V1–V10. Each Part-2 module adds one box back.
+
+<div class="info" data-title="The one-line mental model">
+
+> **Identity at the edge → guard the input → least-privilege in the middle → guard the output → observe everything.** Every module below is one of those five moves.
+
+</div>
+
 ## What you'll learn
 
 **In Part 1** — how each vulnerability is actually exploited, hands-on, through the chat UI.
