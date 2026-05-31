@@ -70,42 +70,41 @@ The **Add the Azure layer** step is the heart of every module. You don't just fl
 Zava is a **multi-agent app** (an orchestrator routing to four specialist agents) wrapped — in Part 2 — by **layers of Azure security controls**. Read this one picture and the whole lab clicks into place: every vulnerability **Vn** is just a missing control at one specific point in the request path.
 
 ```mermaid
-flowchart TB
+flowchart LR
     U["🧑 Client · Chat UI"]
 
-    subgraph EDGE["🛡️ Platform edge — added in Part 2"]
-      direction LR
-      APIM["APIM AI gateway<br/>rate-limit · key vaulting · audit · V10"]
-      ENTRA["Entra ID (OBO)<br/>real caller identity · V5"]
+    subgraph EDGE["🛡️ Platform edge (Part 2)"]
+      APIM["APIM AI gateway · V10"]
+      ENTRA["Entra ID OBO · V5"]
     end
 
     subgraph IN["🔍 Input guards"]
-      direction LR
       CS["Content Safety · V1"]
       PS["Prompt Shields · V2/V6"]
       PIIin["PII redaction · V3"]
     end
 
     subgraph APP["🤖 Zava multi-agent app"]
-      direction LR
       ORCH(["Orchestrator"])
-      ORCH --> ACC["Accounts"]
-      ORCH --> TX["Transactions"]
-      ORCH --> KN["Knowledge / RAG"]
-      ORCH --> RP["Reporting"]
+      ACC["Accounts"]
+      TX["Transactions"]
+      KN["Knowledge / RAG"]
+      RP["Reporting"]
+      ORCH --> ACC
+      ORCH --> TX
+      ORCH --> KN
+      ORCH --> RP
     end
 
     subgraph DATA["🗄️ Tools & data plane"]
-      direction LR
-      DB[("Postgres / SQLite<br/>least-priv + RLS · V4")]
-      MCP["MCP tools<br/>scoped transport · V9"]
-      AIS[("AI Search<br/>doc-level ACL · V5")]
-      SAND["Code interpreter<br/>sandbox · V8"]
-      MODEL[["Foundry model<br/>governed deployment · V1/V2"]]
+      DB[("Postgres / SQLite · V4")]
+      MCP["MCP tools · V9"]
+      AIS[("AI Search · V5")]
+      SAND["Code interpreter · V8"]
+      MODEL["Foundry model · V1/V2"]
     end
 
     subgraph OUT["🔍 Output guards"]
-      direction LR
       GND["Groundedness · V6"]
       PIIout["PII redaction · V3"]
     end
