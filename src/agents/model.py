@@ -31,6 +31,9 @@ from src.config import get_settings
 
 logger = logging.getLogger("zava.model")
 
+# API version used when routing through the APIM AI gateway (AzureOpenAI client).
+_AOAI_API_VERSION = "2024-10-21"
+
 
 def _stub_compose(system_prompt: str, user_message: str, context: str) -> str:
     """Deterministic fallback 'model' used only when no SLM endpoint is
@@ -142,11 +145,32 @@ def compose_answer(system_prompt: str, user_message: str, context: str = "") -> 
     from azure.ai.projects import AIProjectClient  # noqa: PLC0415
     from azure.identity import DefaultAzureCredential  # noqa: PLC0415
 
-    project = AIProjectClient(
-        endpoint=settings.foundry_project_endpoint,
-        credential=DefaultAzureCredential(),
-    )
-    client = project.get_openai_client()
+    from src.agents.gateway import model_client_base_url  # noqa: PLC0415
+
+    credential = DefaultAzureCredential()
+    gateway_url = model_client_base_url()
+    if gateway_url:
+        # SECURE (V10): route the call through Azure API Management. APIM holds
+        # the model key and enforces rate-limit / authn / observability policies
+        # (infra/apim.tf); the app authenticates with its Entra token only.
+        from azure.identity import get_bearer_token_provider  # noqa: PLC0415
+        from openai import AzureOpenAI  # noqa: PLC0415
+
+        token_provider = get_bearer_token_provider(
+            credential, "https://cognitiveservices.azure.com/.default"
+        )
+        client = AzureOpenAI(
+            azure_endpoint=gateway_url,
+            azure_ad_token_provider=token_provider,
+            api_version=_AOAI_API_VERSION,
+        )
+    else:
+        # LAB-VULN(V10): app talks to the deployment directly (static key path).
+        project = AIProjectClient(
+            endpoint=settings.foundry_project_endpoint,
+            credential=credential,
+        )
+        client = project.get_openai_client()
     completion = client.chat.completions.create(
         model=settings.active_model_deployment,
         messages=[

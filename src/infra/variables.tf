@@ -121,6 +121,17 @@ variable "enable_ungoverned_model" {
   description = "Create the V1 'ungoverned' (filters-off) RAI policy + deployment. Requires an approved modified-content-filter exception on the subscription (aka.ms/oai/rai/exceptions); off by default so deploy succeeds on restricted/sponsored subscriptions. The V1 demo also works in OFFLINE_MODE."
 }
 
+variable "content_filter_severity_threshold" {
+  type        = string
+  default     = "Low"
+  description = "Severity at which the GOVERNED deployment's harmful-content filters block (Low|Medium|High). 'Low' = strictest. This is the server-side Foundry guardrail (Module 1/2) provisioned declaratively as an RAI policy — not application code."
+
+  validation {
+    condition     = contains(["Low", "Medium", "High"], var.content_filter_severity_threshold)
+    error_message = "content_filter_severity_threshold must be one of Low, Medium, High."
+  }
+}
+
 # ---------------------------------------------------------------------------
 # Azure MCP Server (Microsoft) — remote PostgreSQL MCP endpoint for Foundry
 # agents, hosted on Azure Container Apps (see containerapp.tf).

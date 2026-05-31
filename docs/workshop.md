@@ -334,18 +334,20 @@ The second layer is the **system prompt**. Compare `prompts/vulnerable/orchestra
 
 #### (b) The Azure wiring
 
-Content filtering is enforced on the **model deployment** so it applies to every call regardless of app code. Create a custom content filter and bind it when you deploy the model:
+Content filtering is enforced on the **model deployment** so it applies to every call regardless of app code — and it's provisioned **declaratively in Terraform**, not in Python. The governed deployment attaches the `governed` RAI policy in [src/infra/foundry.tf](../src/infra/foundry.tf), whose harmful-content filters block at a **low** severity threshold (strictest) driven by a variable:
 
-```bash
-# Create a custom Content Safety filter policy (harm categories + blocklist), then
-# attach it to the Foundry/AOAI deployment so it runs on every request + response.
-az cognitiveservices account deployment create \
-  --name <foundry-account> --resource-group <rg> \
-  --deployment-name gpt-4o-mini --model-name gpt-4o-mini --model-version <ver> \
-  --model-format OpenAI --rai-policy-name zava-finance-filter
+```hcl
+# src/infra/foundry.tf — harm categories, blocking at a low threshold
+severityThreshold = var.content_filter_severity_threshold   # default "Low"
+# ...attached to the deployment via:
+resource "azurerm_cognitive_deployment" "governed" {
+  rai_policy_name = var.secure_mode ? azapi_resource.rai_governed.name : null
+}
 ```
 
-The app simply points at the **governed** deployment — `active_model_deployment` in [src/config.py](../src/config.py) selects it when `enable_content_safety` is on. No filtering logic ships in the app; the platform owns it.
+You set the strictness once in IaC (`content_filter_severity_threshold = "Low"`); the platform then filters every request **and** response. The app simply points at the **governed** deployment — `active_model_deployment` in [src/config.py](../src/config.py) selects it when `enable_content_safety` is on. No filtering logic ships in the app; the platform owns it. The in-app `check_content_safety` is the API-layer backstop / offline mirror only.
+
+> Org-specific "no politics / no jokes" rules that aren't a harm category go in a **custom blocklist** you attach to the same Content Safety resource and reference from the policy — that's the part you own and tune per tenant.
 
 #### (c) Design notes
 
@@ -444,19 +446,34 @@ The knowledge agent calls `shield_prompt(chunk, source="document")` on **every r
 
 #### (b) The Azure wiring
 
-In Azure the regex heuristic is replaced by **Prompt Shields** (part of Azure AI Content Safety), which has two modes you enable on the model deployment / Foundry agent:
+Prompt Shields (part of Azure AI Content Safety) lives in **two places**, and it matters which is which:
 
-- **`userPrompt`** — detects direct jailbreak attempts in the user turn.
-- **`documents`** — detects *indirect* injection in grounding content you pass alongside the prompt.
+**1. Server-side platform gate — provisioned in Terraform, not Python.** The genuine Foundry guardrail is an **RAI policy attached to the model deployment**. The app cannot bypass it because the model endpoint itself enforces it. This is `azapi_resource.rai_governed` in [src/infra/foundry.tf](../src/infra/foundry.tf): low-threshold content filters **plus** the `Jailbreak` (direct) and `Indirect Attack` (document) Prompt Shields filters:
+
+```hcl
+# src/infra/foundry.tf — the SERVER-SIDE guardrail (declarative)
+{ name = "Jailbreak",       blocking = true, enabled = true, source = "Prompt" }  # V2 direct
+{ name = "Indirect Attack", blocking = true, enabled = true, source = "Prompt" }  # V6 indirect
+# ...attached via:  rai_policy_name = azapi_resource.rai_governed.name
+```
+
+> The deployment-attached policy is the control you rely on. It runs on **every** model call, server-side, with no app cooperation. Configure it once in IaC; don't reimplement it per request in app code.
+
+**2. App-side defense-in-depth — the explicit Content Safety call.** The deployment filter only ever sees the **final assembled prompt** and the **completion**. It cannot tell you "*retrieved document #2 was poisoned*" before you build the prompt, and it never sees **tool/MCP output**. So the app makes its own `text:shieldPrompt` call to shield **each retrieved RAG chunk** (V6) and re-check tool results — this is what `shield_prompt(...)` wraps:
 
 ```bash
-# Direct call shape (the Foundry guardrail wraps this for every request):
+# Direct call shape — app-side, per-document (what guard.py invokes when CONTENT_SAFETY_ENDPOINT is set):
 curl -X POST "$CONTENT_SAFETY_ENDPOINT/contentsafety/text:shieldPrompt?api-version=2024-09-01" \
   -H "Ocp-Apim-Subscription-Key: $KEY" -H 'content-type: application/json' \
   -d '{"userPrompt":"<user turn>","documents":["<retrieved chunk>"]}'
 ```
 
-Bind Prompt Shields as a **Foundry agent guardrail** so it runs on every grounded call without the app orchestrating it.
+- **`userPrompt`** — direct jailbreak in the user turn (also caught by the deployment `Jailbreak` filter; the app call is redundant defense).
+- **`documents`** — *indirect* injection in grounding content. This is the one the app **must** own per-chunk, because you decide which retrieved docs to trust before the model sees them.
+
+> If you invoke shields through the **Foundry project SDK** at runtime instead of a raw REST call, that's fine — but it's still the *app-side* layer (#2), not the platform guarantee (#1). Keep the deployment RAI policy as your primary gate.
+
+Bind the deployment RAI policy as your platform default; use the per-document call for RAG.
 
 #### (c) Design notes
 

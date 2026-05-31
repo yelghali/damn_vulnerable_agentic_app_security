@@ -44,6 +44,21 @@ def reset_gateway_budget() -> None:
         _tokens_used = 0
 
 
+def model_client_base_url() -> str | None:
+    """Return the APIM AI-gateway base URL to route real model calls through.
+
+    When the gateway is enabled and ``AI_GATEWAY_URL`` is set, model calls are
+    sent to **Azure API Management** instead of the Foundry deployment directly.
+    APIM holds the model key and enforces the rate-limit / authn / observability
+    policies declared in ``infra/apim.tf`` server-side. Returns ``None`` to call
+    the deployment directly (LAB-VULN V10: static key exposed, no throttling).
+    """
+    settings = get_settings()
+    if settings.enable_ai_gateway and settings.ai_gateway_url:
+        return settings.ai_gateway_url.rstrip("/")
+    return None
+
+
 @dataclass
 class GatewayDecision:
     """Outcome of routing one call through (or around) the gateway."""

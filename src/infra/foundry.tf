@@ -4,10 +4,18 @@
 # app talks to via the Foundry project SDK (azure-ai-projects >= 2.0.0).
 #
 # Two model deployments are created so the lab can contrast them:
-#   * governed   — default Microsoft content filters (the secure end state)
+#   * governed   — attaches the "governed" RAI policy below: low-threshold
+#                  content filters + Prompt Shields (Jailbreak + Indirect
+#                  Attack). This is the SERVER-SIDE Foundry guardrail and is the
+#                  secure end state. It is provisioned declaratively here, not
+#                  in Python — the app cannot bypass it.
 #   * ungoverned — a custom RAI policy with filters effectively OFF, which
 #                  SAFELY simulates the V1 "unsafe model" without hosting a
 #                  genuinely unsafe model.
+#
+# The Content Safety SDK calls in src/agents/guard/guard.py are defense-in-depth
+# layered ON TOP of the platform policy (e.g. per-RAG-document shielding for V6
+# and tool-output re-checks the deployment filter never sees).
 # ---------------------------------------------------------------------------
 
 resource "azurerm_cognitive_account" "ai" {
@@ -52,10 +60,58 @@ resource "azapi_update_resource" "ai_allow_projects" {
   }
 }
 
+# --- Governed RAI policy: the SERVER-SIDE Foundry guardrail (Module 1 + 2) ----
+# This is the genuine platform control the app cannot bypass. It is provisioned
+# DECLARATIVELY here (not in Python): harmful-content filters block at a low
+# severity threshold, and Prompt Shields are turned on for BOTH direct
+# (Jailbreak) and indirect (Indirect Attack) prompt-injection, plus Protected
+# Material. The app-side Content Safety calls in src/agents/guard/guard.py are
+# defense-in-depth on top of this — notably the only place that can shield each
+# RETRIEVED RAG document (V6) and re-check tool output, which the deployment
+# filter never sees.
+resource "azapi_resource" "rai_governed" {
+  type      = "Microsoft.CognitiveServices/accounts/raiPolicies@2024-10-01"
+  name      = "governed"
+  parent_id = azurerm_cognitive_account.ai.id
+
+  body = {
+    properties = {
+      basePolicyName = "Microsoft.DefaultV2"
+      mode           = "Default"
+      contentFilters = concat(
+        [
+          for entry in setproduct(["Hate", "Sexual", "Violence", "Selfharm"], ["Prompt", "Completion"]) : {
+            name              = entry[0]
+            blocking          = true
+            enabled           = true
+            severityThreshold = var.content_filter_severity_threshold
+            source            = entry[1]
+          }
+        ],
+        [
+          # Prompt Shields — direct jailbreak detection on the user prompt (V2).
+          { name = "Jailbreak", blocking = true, enabled = true, source = "Prompt" },
+          # Prompt Shields — indirect injection detection on grounding docs (V6).
+          { name = "Indirect Attack", blocking = true, enabled = true, source = "Prompt" },
+          # Protected material (completion-side).
+          { name = "Protected Material Text", blocking = true, enabled = true, source = "Completion" },
+        ]
+      )
+    }
+  }
+
+  schema_validation_enabled = false
+}
+
 # --- Governed deployment: default content filters (secure reference) ---------
 resource "azurerm_cognitive_deployment" "governed" {
   name                 = "gpt-governed"
   cognitive_account_id = azurerm_cognitive_account.ai.id
+
+  # Attach the server-side guardrail policy above (Prompt Shields + low-threshold
+  # content filters). In secure_mode this is the policy the app actually uses;
+  # the default Microsoft policy is the fallback when not in secure mode.
+  rai_policy_name = var.secure_mode ? azapi_resource.rai_governed.name : null
 
   model {
     format  = "OpenAI"

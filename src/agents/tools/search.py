@@ -18,6 +18,7 @@ so retrieval + trimming are testable without Azure.
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ from src.config import get_settings
 
 _DOCS_DIR = Path(__file__).resolve().parents[2] / "data" / "docs"
 _FRONT_MATTER = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
+logger = logging.getLogger("zava.search")
 
 
 def _load_offline_docs() -> list[dict[str, Any]]:
@@ -64,8 +66,17 @@ def search_documents(
     """Retrieve document chunks relevant to ``query``.
 
     ``caller_groups`` are the authenticated principal's Entra group/object IDs.
+    Uses Azure AI Search when ``SEARCH_ENDPOINT`` is configured, else the offline
+    markdown corpus. Document-level security trimming is applied identically in
+    both paths (server-side ``search.in()`` filter for Azure; in-memory for offline).
     """
     settings = get_settings()
+    if settings.search_endpoint and settings.search_key:
+        try:
+            return _azure_search(query, caller_groups, top, settings)
+        except Exception as exc:  # noqa: BLE001 - any SDK/transport error -> offline
+            logger.warning("Azure AI Search failed, using offline corpus: %s", exc)
+
     docs = _load_offline_docs()
 
     # naive keyword relevance (offline). Azure AI Search does vector + semantic.
@@ -91,4 +102,39 @@ def search_documents(
     return [
         {"id": d["id"], "title": d["title"], "content": d["content"]}
         for d in results
+    ]
+
+
+def _azure_search(
+    query: str, caller_groups: list[str] | None, top: int, settings: Any
+) -> list[dict[str, Any]]:
+    """Genuine Azure AI Search query with optional document-level security trimming.
+
+    When ``enable_doc_security`` is on, the trimming runs **server-side** via an
+    OData ``search.in()`` filter on the ``group_ids`` field, so untrimmed chunks
+    never leave the index. When off, no filter is applied -> every chunk is
+    returned to every caller (LAB-VULN V5).
+    """
+    from azure.core.credentials import AzureKeyCredential
+    from azure.search.documents import SearchClient
+
+    client = SearchClient(
+        endpoint=settings.search_endpoint,
+        index_name=settings.search_index_name,
+        credential=AzureKeyCredential(settings.search_key),
+    )
+    search_filter: str | None = None
+    if settings.enable_doc_security:
+        groups = ", ".join(g.replace("'", "") for g in (caller_groups or []))
+        # Only return docs with no ACL or whose group_ids intersect the caller's.
+        search_filter = f"group_ids/any() eq false or group_ids/any(g: search.in(g, '{groups}'))"
+    results = client.search(
+        search_text=query,
+        filter=search_filter,
+        top=top,
+        select=["id", "title", "content"],
+    )
+    return [
+        {"id": r.get("id"), "title": r.get("title"), "content": r.get("content")}
+        for r in results
     ]
