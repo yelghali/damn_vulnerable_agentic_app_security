@@ -206,6 +206,8 @@ Then prove it holds with **evaluations** and **AI red teaming**.
 
 ---
 
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
+
 ## The code map
 
 Each Part-2 module touches a single, obvious lever. Open exactly these files:
@@ -230,6 +232,8 @@ The master switch is `SECURE_MODE`. Any individual toggle left unset inherits `S
 Each Part-2 *Add the Azure layer* section is organized as: **(a) the secure design & code**, **(b) the Azure wiring**, **(c) design notes / trade-offs**, then the toggle to flip the offline before/after.
 
 ---
+
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
 
 ## Part 1 · Understand the vulnerabilities (run locally)
 
@@ -353,6 +357,8 @@ Every test asserts **both** the vulnerable behavior (toggle off) **and** the sec
 
 ---
 
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
+
 ## Part 2 · Add the Azure security layers
 
 > ⏱️ Core (Modules 1–6) ~4 h · Extended (Modules 7–11 + capstone) +2–3 h
@@ -383,6 +389,8 @@ python -m src.scripts.seed   # seed Postgres + upload sample docs (incl. one poi
 | 8 | **Foundry** Groundedness detection + trusted ingestion | V6 data poisoning |
 
 ---
+
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
 
 ## Module 1 — Foundry guardrails: Responsible & Safe AI
 
@@ -521,6 +529,8 @@ After you enable Content Safety (or flip `SECURE_MODE=true`), the whole posture 
 
 ---
 
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
+
 ## Module 2 — Foundry guardrails: Prompt injection & jailbreak
 
 > ⏱️ ~35 min · **Azure layer: Foundry Prompt Shields** · Fixes **V2 + V6** · OWASP LLM01 · Agentic T6
@@ -645,6 +655,8 @@ Flip `SECURE_MODE=true` (or just the V2 toggles), restart, and re-run the **same
 
 ---
 
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
+
 ## Module 3 — Azure AI Language: PII & sensitive-data protection
 
 > ⏱️ ~30 min · **Azure layer: Azure AI Language PII** · Fixes **V3** · OWASP LLM02/07 · Agentic T15
@@ -752,6 +764,8 @@ With redaction on, the same balance request now shows explicit `pii: redacted` e
 </div>
 
 ---
+
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
 
 ## Module 4 — Secure MCP through Foundry: tool least-privilege, HITL & secure code
 
@@ -919,6 +933,8 @@ The biggest behavioral change is `transfer_funds`. With HITL on, the agent stops
 
 ---
 
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
+
 ## Module 5 — Entra ID identity & AI Search document security
 
 > ⏱️ ~40 min · **Azure layer: Entra ID + AI Search ACLs** · Fixes **V5** · OWASP LLM06 · Agentic T3/T9
@@ -1041,6 +1057,8 @@ Re-run the IDOR from Part 1. Signed in as `CUST-1001`, the request to read `CUST
 
 ---
 
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
+
 ## Module 6 — APIM AI gateway, observability, rate limiting & Defender
 
 > ⏱️ ~35 min · **Azure layer: APIM AI gateway + Defender** · Fixes **V7 + V10** · OWASP LLM10 · Agentic T4/T8
@@ -1142,6 +1160,8 @@ Authenticated calls route via the gateway with the key hidden; unauthenticated o
 
 ---
 
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
+
 ## Module 7 — Microsoft Purview: DLP & data governance
 
 > ⏱️ Extended · **Azure layer: Microsoft Purview** · Fixes **V3 + V6** · Tenant admin + licensing
@@ -1173,6 +1193,8 @@ Even with PII redaction, the org needs **discovery, classification, labeling, an
 </div>
 
 ---
+
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
 
 ## Module 8 — Data poisoning deep-dive & groundedness
 
@@ -1248,6 +1270,8 @@ Ask the same rate-disclosure question again. The poisoned chunk is now dropped b
 
 ---
 
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
+
 ## Module 9 — Evaluations
 
 > ⏱️ Extended · Assurance · Code-deployable
@@ -1265,6 +1289,8 @@ python -m src.evals.run        # local + Foundry cloud eval
 </div>
 
 ---
+
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
 
 ## Module 10 — AI red teaming (automated)
 
@@ -1284,6 +1310,8 @@ python -m src.redteam.run
 
 ---
 
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
+
 ## Module 11 — Agent governance toolkit
 
 > ⏱️ Extended · Governance · Optional / self-paced
@@ -1291,6 +1319,8 @@ python -m src.redteam.run
 Apply Microsoft's [agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit) to the lab's agents: build an **agent inventory**, define **policy**, and assess **governance posture**. This is also where the in-app guard middleware (Module 3's PII layer + tool-output re-scanning) graduates from "optional" to a governed, policy-driven control.
 
 ---
+
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
 
 ## Capstone — Red-team challenge (manual)
 
@@ -1334,6 +1364,8 @@ Where Module 10 is automated coverage, the capstone is the human, integrative *"
 </div>
 
 ---
+
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
 
 ## Reference — vulnerability ↔ standards map
 
