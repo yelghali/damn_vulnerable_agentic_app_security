@@ -12,13 +12,13 @@ variable "location" {
 
 variable "model_name" {
   type        = string
-  default     = "gpt-4o-mini"
+  default     = "gpt-4.1-mini"
   description = "Foundry model to deploy (governed + ungoverned variants)."
 }
 
 variable "model_version" {
   type        = string
-  default     = "2024-07-18"
+  default     = "2025-04-14"
   description = "Model version for the deployment."
 }
 
@@ -111,7 +111,7 @@ variable "search_sku" {
 
 variable "ungoverned_model_name" {
   type        = string
-  default     = "gpt-4o-mini"
+  default     = "gpt-4.1-mini"
   description = "Model used for the V1 'ungoverned' deployment (content filters effectively disabled via a custom RAI policy)."
 }
 

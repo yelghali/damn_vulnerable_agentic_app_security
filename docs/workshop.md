@@ -247,7 +247,7 @@ Then prove it holds with **evaluations** and **AI red teaming**.
 | Azure subscription | **Part 2** | Contributor on a resource group is enough for Modules 1–6. |
 | Azure CLI | **Part 2** | `az login` and a default subscription set. |
 | Terraform ≥ 1.7 | **Part 2** | Used to deploy all infrastructure. |
-| Model quota | **Part 2** | A small chat model (e.g. `gpt-4o-mini`) in a known-good region. |
+| Model quota | **Part 2** | A small chat model (e.g. `gpt-4.1-mini`) in a known-good region. |
 | Tenant admin | **Part 2 · Extended** | Only for Modules 5 & 7 (Entra app reg, Purview). Fallbacks provided. |
 
 <div class="tip" data-title="Part 1 needs zero Azure">

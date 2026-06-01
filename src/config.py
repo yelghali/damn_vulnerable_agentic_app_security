@@ -70,9 +70,9 @@ class Settings(BaseSettings):
 
     # --- Azure AI Foundry --------------------------------------------------
     foundry_project_endpoint: str = Field(default="", alias="FOUNDRY_PROJECT_ENDPOINT")
-    foundry_model_deployment: str = Field(default="gpt-4o-mini", alias="FOUNDRY_MODEL_DEPLOYMENT")
+    foundry_model_deployment: str = Field(default="gpt-4.1-mini", alias="FOUNDRY_MODEL_DEPLOYMENT")
     foundry_ungoverned_deployment: str = Field(
-        default="gpt-4o-mini-nofilter", alias="FOUNDRY_UNGOVERNED_DEPLOYMENT"
+        default="gpt-4.1-mini-nofilter", alias="FOUNDRY_UNGOVERNED_DEPLOYMENT"
     )
     # Provision persistent Foundry agents (so they appear in the portal Agents
     # tab) instead of only calling chat completions. Driven by

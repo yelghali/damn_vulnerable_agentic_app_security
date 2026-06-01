@@ -12,7 +12,7 @@ What it creates
 ---------------
 1. An **Azure AI Search** index (``SEARCH_INDEX_NAME``) and uploads the markdown
    docs in ``src/data/docs`` (the Knowledge agent's RAG corpus). Uses the SIMPLE
-   query type so no embedding model is required (only gpt-4o-mini is deployed).
+   query type so no embedding model is required (only gpt-4.1-mini is deployed).
 2. Five persistent agents via ``project.agents.create_version(...)`` +
    ``PromptAgentDefinition``:
      * ``zava-orchestrator``  — router (no tools)
