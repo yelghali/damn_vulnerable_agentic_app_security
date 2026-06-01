@@ -19,6 +19,7 @@ const TOGGLE_LABELS = {
   secure_runtime: "Secure infrastructure (V7)",
   mcp_tool_security: "MCP tool scoping (V9)",
   ai_gateway: "AI gateway / APIM (V10)",
+  a2a_guard: "Agent-to-agent guard (V11)",
 };
 
 // --- One-click exploit + benign prompts -------------------------------------

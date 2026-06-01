@@ -25,7 +25,7 @@ def _reload_with(monkeypatch: pytest.MonkeyPatch, **env: str):
         "ENABLE_PII_REDACTION", "ENABLE_TOOL_LEAST_PRIV", "ENABLE_HITL",
         "ENABLE_CODE_SANDBOX", "ENABLE_OBO", "ENABLE_DOC_SECURITY",
         "ENABLE_GROUNDEDNESS", "ENABLE_SECURE_RUNTIME",
-        "ENABLE_MCP_TOOL_SECURITY", "ENABLE_AI_GATEWAY",
+        "ENABLE_MCP_TOOL_SECURITY", "ENABLE_AI_GATEWAY", "ENABLE_A2A_GUARD",
         "USE_MCP_TOOLS", "PG_MCP_SERVER_URL", "MCP_TOOL_ALLOWLIST",
         "AI_GATEWAY_TOKEN_LIMIT",
     ):
@@ -326,3 +326,44 @@ def test_v10_direct_exposure_when_disabled(monkeypatch):
     assert decision.allowed
     assert not decision.routed_via_gateway
     assert decision.key_exposed_to_client
+
+
+# --- V11: agent-to-agent communication poisoning (T12) ---------------------
+_A2A_QUERY = "what is the wire policy and fees?"  # routes to knowledge; retrieves the poisoned doc
+
+
+def test_v11_a2a_forged_handoff_executes_when_disabled(monkeypatch):
+    # Vulnerable baseline: a poisoned doc smuggles a cross-agent handoff that
+    # the orchestrator delivers to the transactions agent, which executes the
+    # forged transfer. No jailbreak phrasing, so Prompt Shields doesn't catch it.
+    orch, _, _ = _reload_with(monkeypatch, ENABLE_A2A_GUARD="false")
+    res = orch.handle_turn(_A2A_QUERY, _ctx())
+    assert "Transfer completed" in res.answer
+    assert any("handoff executed" in e for e in res.events)
+
+
+def test_v11_a2a_forged_handoff_blocked_when_enabled(monkeypatch):
+    # Secure: the inter-agent guard re-scans the handoff message and refuses the
+    # forged money-movement directive crossing the agent boundary.
+    orch, _, _ = _reload_with(monkeypatch, ENABLE_A2A_GUARD="true")
+    res = orch.handle_turn(_A2A_QUERY, _ctx())
+    assert "Transfer completed" not in res.answer
+    assert any("A2A BLOCKED" in e for e in res.events)
+
+
+# --- V7: insecure infrastructure — safe vs verbose errors (T8) -------------
+def test_v7_verbose_error_leaks_detail_when_disabled(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_SECURE_RUNTIME="false")
+    from src.app.main import format_error
+
+    msg = format_error(ValueError("db connection failed: password=hunter2 at /app/db.py:42"))
+    assert "hunter2" in msg  # internals leak to the client
+
+
+def test_v7_safe_error_when_enabled(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_SECURE_RUNTIME="true")
+    from src.app.main import format_error
+
+    msg = format_error(ValueError("db connection failed: password=hunter2 at /app/db.py:42"))
+    assert "hunter2" not in msg
+    assert "internal error" in msg.lower()

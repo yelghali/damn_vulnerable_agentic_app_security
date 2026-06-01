@@ -51,6 +51,18 @@ def config() -> dict:
     return get_settings().summary()
 
 
+def format_error(exc: Exception) -> str:
+    """V7 (secure infrastructure): safe error handling at the runtime edge.
+
+    Secure runtime returns a generic message; the vulnerable baseline leaks the
+    exception type and detail (a stack-trace-like message) straight to the
+    client, which can disclose internals (paths, SQL, secrets in messages).
+    """
+    if get_settings().enable_secure_runtime:
+        return "An internal error occurred. Please try again later."
+    return f"Internal error: {type(exc).__name__}: {exc}"  # LAB-VULN(V7): verbose errors
+
+
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest) -> ChatResponse:
     ctx = AgentContext(
@@ -58,7 +70,14 @@ def chat(req: ChatRequest) -> ChatResponse:
         groups=req.groups,
         approved_action=req.approved_action,
     )
-    result = handle_turn(req.message, ctx)
+    try:
+        result = handle_turn(req.message, ctx)
+    except Exception as exc:  # noqa: BLE001 - surface a safe/unsafe error per V7
+        logging.exception("chat turn failed")
+        return ChatResponse(
+            answer=format_error(exc), agent="orchestrator", events=[],
+            blocked=True, requires_approval=None, sources=[],
+        )
     return ChatResponse(
         answer=result.answer,
         agent=result.agent,

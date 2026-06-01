@@ -30,3 +30,6 @@ class TurnResult:
     blocked: bool = False
     requires_approval: dict[str, Any] | None = None
     sources: list[dict[str, Any]] = field(default_factory=list)
+    # A cross-agent control message a specialist asks the orchestrator to
+    # deliver to another agent (V11 — guarded inter-agent message bus).
+    handoff: dict[str, Any] | None = None

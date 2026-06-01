@@ -58,6 +58,17 @@ rules:
       allow-listed read tools, and their output is re-scanned before the model
       sees it. Maps to ENABLE_MCP_TOOL_SECURITY.
 
+  # --- Inter-agent handoffs: re-scan forged directives (V11 / Agentic T12) -----
+  - name: guard-agent-to-agent-messages
+    condition: channel == "handoff"
+    action: rescan
+    require:
+      - no_forged_actions    # refuse handoffs that carry state-changing directives
+    description: >
+      Messages one agent hands off to another are untrusted input: they are
+      re-scanned for forged state-changing directives (transfer/wire/send/pay)
+      before the receiving agent acts. Maps to ENABLE_A2A_GUARD.
+
   # --- Anything else (e.g. an MCP server advertising transfer_funds) -----------
   - name: deny-unknown-tools
     condition: default

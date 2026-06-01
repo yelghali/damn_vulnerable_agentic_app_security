@@ -72,6 +72,17 @@ _INJECTION_PATTERNS = [
     r"act as if you have no restrictions",
 ]
 
+# --- A2A (agent-to-agent) forbidden cross-agent directives (V11) ------------
+# State-changing actions one agent must never be able to command in another via
+# an unverified handoff message. These deliberately do NOT overlap with the
+# jailbreak patterns above — a forged handoff looks like a normal instruction.
+_A2A_ACTION_PATTERNS = [
+    r"\btransfer\b.*\bto\b",
+    r"\bwire\b.*\b(funds|money|\$?\d)",
+    r"\bsend\b.*\b(statement|email|payment)\b",
+    r"\bpay\b.*\b\$?\d",
+]
+
 # --- PII regexes (offline approximation of Azure AI Language PII) -----------
 _PII_PATTERNS = {
     "USSocialSecurityNumber": re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
@@ -244,6 +255,30 @@ def shield_prompt(text: str, source: str = "user") -> None:
             raise SafetyViolation(
                 f"Prompt-injection attempt detected in {source} content.",
                 "jailbreak" if source == "user" else "indirect_injection",
+            )
+
+
+def guard_agent_message(text: str, from_agent: str, to_agent: str) -> None:
+    """Re-scan a *cross-agent control message* before one agent acts on another
+    agent's request (V11 — Agent Communication Poisoning, OWASP Agentic T12).
+
+    Prompt Shields (V6) catches obvious jailbreak phrasing in user/document
+    content, but a poisoned upstream agent can emit a perfectly plausible-looking
+    *instruction* ("transfer $9999 …") that no jailbreak pattern matches. The
+    fix is to treat every inter-agent message as untrusted and block embedded
+    state-changing directives crossing the boundary.
+
+    No-op when the toggle is off, so the vulnerable baseline lets a forged
+    handoff flow straight into the receiving agent.
+    """
+    if not get_settings().enable_a2a_guard:
+        return  # LAB-VULN(V11): inter-agent messages trusted blindly
+    low = text.lower()
+    for pat in _A2A_ACTION_PATTERNS:
+        if re.search(pat, low):
+            raise SafetyViolation(
+                f"Forged action in inter-agent message ({from_agent} -> {to_agent}).",
+                "a2a_poisoning",
             )
 
 

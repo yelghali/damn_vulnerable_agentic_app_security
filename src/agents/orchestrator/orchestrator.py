@@ -18,7 +18,13 @@ from __future__ import annotations
 import logging
 
 from src.agents.accounts import agent as accounts_agent
-from src.agents.guard.guard import SafetyViolation, check_content_safety, redact_pii, shield_prompt
+from src.agents.guard.guard import (
+    SafetyViolation,
+    check_content_safety,
+    guard_agent_message,
+    redact_pii,
+    shield_prompt,
+)
 from src.agents.knowledge import agent as knowledge_agent
 from src.agents.model import compose_answer
 from src.agents.prompts import load_system_prompt
@@ -40,6 +46,36 @@ def _route(message: str) -> str:
     if any(k in low for k in ("document", "policy", "disclosure", "fee", "interest", "terms")):
         return "knowledge"
     return "knowledge"
+
+
+def _deliver_handoff(result: TurnResult, ctx: AgentContext) -> TurnResult:
+    """Deliver a specialist's cross-agent handoff after re-scanning it (V11).
+
+    Secure: ``guard_agent_message`` blocks a forged state-changing directive.
+    Vulnerable: the message is trusted and the receiving agent executes it.
+    """
+    ho = result.handoff or {}
+    to_agent = ho.get("to", "")
+    payload = ho.get("message", "")
+    try:
+        guard_agent_message(payload, from_agent=result.agent, to_agent=to_agent)
+    except SafetyViolation as v:
+        result.events.append(f"A2A BLOCKED ({v.category}): refused {result.agent} -> {to_agent} handoff")
+        result.handoff = None
+        return result
+
+    # Guard passed (or is off): dispatch to the named agent.
+    if to_agent == "transactions":
+        sub = transactions_agent.run(payload, ctx)
+        result.events.append(f"A2A: {result.agent} -> transactions handoff executed")
+        result.events += [f"  {e}" for e in sub.events]
+        result.answer += f"\n\n[handoff → transactions]: {sub.answer}"
+        if sub.requires_approval:
+            result.requires_approval = sub.requires_approval
+    else:
+        result.events.append(f"A2A: handoff to unknown agent '{to_agent}' ignored")
+    result.handoff = None
+    return result
 
 
 def handle_turn(message: str, ctx: AgentContext) -> TurnResult:
@@ -76,6 +112,13 @@ def handle_turn(message: str, ctx: AgentContext) -> TurnResult:
         result.answer = compose_answer(load_system_prompt(), message, result.answer)
 
     result.events = events + result.events
+
+    # 3b. AGENT-TO-AGENT handoff (V11) --------------------------------------
+    # A specialist may ask the orchestrator to deliver a control message to
+    # another agent. We re-scan that message at the boundary before acting on
+    # it; when the guard is off the forged directive executes (poisoning).
+    if result.handoff and not result.blocked:
+        result = _deliver_handoff(result, ctx)
 
     # 4. OUTPUT guards ------------------------------------------------------
     if not result.blocked:

@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     enable_secure_runtime: bool | None = Field(default=None, alias="ENABLE_SECURE_RUNTIME")  # V7
     enable_mcp_tool_security: bool | None = Field(default=None, alias="ENABLE_MCP_TOOL_SECURITY")  # V9
     enable_ai_gateway: bool | None = Field(default=None, alias="ENABLE_AI_GATEWAY")          # V10
+    enable_a2a_guard: bool | None = Field(default=None, alias="ENABLE_A2A_GUARD")            # V11
 
     # --- Tool transport ----------------------------------------------------
     # When true the data tools are reached via an MCP server (the Microsoft
@@ -132,6 +133,7 @@ class Settings(BaseSettings):
             "enable_secure_runtime",
             "enable_mcp_tool_security",
             "enable_ai_gateway",
+            "enable_a2a_guard",
         ):
             if getattr(self, name) is None:
                 object.__setattr__(self, name, self.secure_mode)
@@ -166,6 +168,7 @@ class Settings(BaseSettings):
             "secure_runtime": bool(self.enable_secure_runtime),
             "mcp_tool_security": bool(self.enable_mcp_tool_security),
             "ai_gateway": bool(self.enable_ai_gateway),
+            "a2a_guard": bool(self.enable_a2a_guard),
         }
 
 
