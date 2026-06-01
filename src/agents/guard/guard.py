@@ -41,18 +41,25 @@ from src.config import get_settings
 logger = logging.getLogger("zava.guard")
 
 # Content Safety severity (0-7) at/above which a category counts as a block.
-_CS_SEVERITY_THRESHOLD = 2
+# The default lives in config (CONTENT_SAFETY_SEVERITY_THRESHOLD) so a learner
+# can tune strictness without editing code, exactly like the Azure portal.
 _CS_API_VERSION = "2024-09-01"
 _CS_GROUNDEDNESS_API_VERSION = "2024-09-15-preview"
 
-# --- Content Safety category keyword seeds (offline heuristic) --------------
-_CATEGORY_TERMS = {
-    "sexual": ["explicit sexual", "sexual act", "nude", "porn"],
-    "hate": ["racial slur", "ethnic cleansing", "subhuman", "hate group"],
-    "violence": ["build a bomb", "make a weapon", "kill", "shoot up"],
-    "self_harm": ["kill myself", "how to suicide", "end my life", "self-harm"],
+# --- Content Safety category seeds with an illustrative severity (offline) ---
+# Each seed term carries a 0-7 severity, mirroring Azure's FourSeverityLevels
+# scoring, so the severity threshold is meaningful offline: raise the threshold
+# and milder terms (e.g. "nude" at 2) stop being blocked while "build a bomb"
+# (6) still is.
+_CATEGORY_TERMS: dict[str, dict[str, int]] = {
+    "sexual": {"explicit sexual": 6, "sexual act": 4, "nude": 2, "porn": 6},
+    "hate": {"racial slur": 6, "ethnic cleansing": 7, "subhuman": 4, "hate group": 4},
+    "violence": {"build a bomb": 6, "make a weapon": 4, "kill": 4, "shoot up": 6},
+    "self_harm": {"kill myself": 6, "how to suicide": 6, "end my life": 4, "self-harm": 4},
 }
 # Off-topic / out-of-scope topics a finance assistant must decline (RAI).
+# This is a *custom blocklist* (an org business rule, not a model harm category),
+# so it has its own on/off knob (CONTENT_SAFETY_BLOCK_OFF_TOPIC).
 _OFF_TOPIC_TERMS = ["who should i vote", "political party", "election", "tell me a joke about"]
 
 # --- Prompt Shields jailbreak / injection patterns -------------------------
@@ -120,8 +127,9 @@ def _azure_check_content_safety(text: str, creds: tuple[str, str]) -> None:
         timeout=10.0,
     )
     resp.raise_for_status()
+    threshold = get_settings().content_safety_severity_threshold
     for item in resp.json().get("categoriesAnalysis", []):
-        if int(item.get("severity", 0)) >= _CS_SEVERITY_THRESHOLD:
+        if int(item.get("severity", 0)) >= threshold:
             category = str(item.get("category", "harmful")).lower()
             raise SafetyViolation(f"Blocked harmful content ({category}).", category)
 
@@ -193,16 +201,21 @@ def check_content_safety(text: str) -> None:
             _heuristic_content_safety(text)
     else:
         _heuristic_content_safety(text)
-    low = text.lower()
-    for term in _OFF_TOPIC_TERMS:  # custom blocklist (org rule)
-        if term in low:
-            raise SafetyViolation("Request is outside Zava's financial scope.", "off_topic")
+    # Custom off-topic blocklist (org rule) — independently toggleable so a
+    # learner can see the difference between a model harm category and a
+    # business "no politics / no jokes" rule.
+    if get_settings().content_safety_block_off_topic:
+        low = text.lower()
+        for term in _OFF_TOPIC_TERMS:
+            if term in low:
+                raise SafetyViolation("Request is outside Zava's financial scope.", "off_topic")
 
 
 def _heuristic_content_safety(text: str) -> None:
     low = text.lower()
+    threshold = get_settings().content_safety_severity_threshold
     for category, terms in _CATEGORY_TERMS.items():
-        if any(t in low for t in terms):
+        if any(sev >= threshold and term in low for term, sev in terms.items()):
             raise SafetyViolation(f"Blocked harmful content ({category}).", category)
 
 

@@ -518,10 +518,32 @@ Read the panel carefully — it names the gaps the rest of Part 2 closes:
 
 #### See the before/after
 
+Flip **only this one guardrail** — leave `SECURE_MODE=false` so every *other* control stays off and you isolate exactly what Content Safety does:
+
 ```bash
-# .env
+# .env  — keep SECURE_MODE=false; turn on just this module's control
 ENABLE_CONTENT_SAFETY=true
 ```
+
+> **Why not `SECURE_MODE=true` here?** That's the master switch — it turns on *all* ~12 controls at once (the final answer key). For learning, enable one `ENABLE_*` at a time so the posture panel lights up a **single** control and you see that one vulnerability close in isolation.
+
+#### Play with the guardrail (don't just turn it on)
+
+A real Content Safety filter isn't a single on/off — you **tune** it, exactly like the sliders in the Foundry portal. The lab exposes the same two dials so you can experiment offline (they only apply while `ENABLE_CONTENT_SAFETY=true`):
+
+```bash
+# How strict are the harm categories? Severity 1..7, lower = stricter.
+# A category blocks only at/above this level. Default 2.
+CONTENT_SAFETY_SEVERITY_THRESHOLD=2     # try 5 -> milder hits (e.g. "nude") now pass; "build a bomb" still blocks
+# The org "off-topic" custom blocklist (politics, "tell me a joke"...). Default on.
+CONTENT_SAFETY_BLOCK_OFF_TOPIC=true     # set false -> "Tell me a joke about the election" is allowed again
+```
+
+Things to try and watch the event trace:
+
+- **Lower the bar:** `CONTENT_SAFETY_SEVERITY_THRESHOLD=1` blocks even mild content; `=6` lets all but the most severe through. This is the *category* dial (model-driven harm: sexual / hate / violence / self-harm).
+- **Politics is a *business* rule, not a harm category.** It lives in the **custom blocklist** — `CONTENT_SAFETY_BLOCK_OFF_TOPIC=true` by default (so a finance bot declines election talk). Turn it off and the model-harm categories still apply, but off-topic chatter flows. That separation is the lesson: harm severity ≠ org policy.
+- **The neighbours stay independent.** Prompt Shields (`ENABLE_PROMPT_SHIELDS`) and output **PII** redaction (`ENABLE_PII_REDACTION`) are *separate* toggles — you can have Content Safety on while shields/PII are off, just like attaching different guardrails per concern on the platform.
 
 </details>
 
@@ -537,9 +559,10 @@ In the baseline the finance bot happily takes the bait on an off-topic/harmful p
 
 ![Vulnerable bot engaging with an off-topic, harmful prompt](assets/screenshots/08-v1-offtopic-vulnerable.png)
 
-After you enable Content Safety (or flip `SECURE_MODE=true`), the whole posture panel turns green and the same class of prompt is refused at the guard:
+With just `ENABLE_CONTENT_SAFETY=true`, the **Content Safety** control alone turns green and the same class of prompt is refused at the guard (the other controls stay red — you'll green them one module at a time). Flipping `SECURE_MODE=true` later lights up the *whole* panel — that's the final answer key, not this module:
 
 ![Secure posture — every control enabled](assets/screenshots/09-app-overview-secure.png)
+
 
 <div class="info" data-title="Learn more">
 

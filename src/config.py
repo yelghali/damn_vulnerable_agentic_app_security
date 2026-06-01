@@ -84,6 +84,17 @@ class Settings(BaseSettings):
     # --- Content Safety / Language / Search --------------------------------
     content_safety_endpoint: str = Field(default="", alias="CONTENT_SAFETY_ENDPOINT")
     content_safety_key: str = Field(default="", alias="CONTENT_SAFETY_KEY")
+    # Guardrail tuning (Module 1) — mirrors the Azure Content Safety portal,
+    # where you don't just turn the filter on/off, you *tune* it:
+    #   * severity threshold 1..7 (lower = stricter; a category blocks at/above it)
+    #   * an org "off-topic" custom blocklist (e.g. politics) you can detach
+    # These only take effect while enable_content_safety is on.
+    content_safety_severity_threshold: int = Field(
+        default=2, alias="CONTENT_SAFETY_SEVERITY_THRESHOLD"
+    )
+    content_safety_block_off_topic: bool = Field(
+        default=True, alias="CONTENT_SAFETY_BLOCK_OFF_TOPIC"
+    )
     language_endpoint: str = Field(default="", alias="LANGUAGE_ENDPOINT")
     language_key: str = Field(default="", alias="LANGUAGE_KEY")
     search_endpoint: str = Field(default="", alias="SEARCH_ENDPOINT")
