@@ -92,10 +92,12 @@ Everything in this lab — the diagram, the exploit buttons, the modules — is 
 | **V9** | **Insecure MCP tools** — untrusted MCP transport, admin creds passed through | inspect [src/agents/tools/mcp.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/mcp.py) · `pytest -k v9` *(MCP isn't wired to the chat UI)* | Module 4 |
 | **V10** | **No AI gateway** — model keys in the app, no throttling or audit | inspect `POST /api/chat`: keys in app, no rate limit | Module 6 |
 
-<div class="info" data-title="Two things that confuse everyone (read this once)">
+<div class="info" data-title="A few things that confuse everyone (read this once)">
 
 > - **Module numbers are *not* vulnerability numbers.** Modules are named after the **Azure layer** they add, so one module can close several `Vn` (e.g. Module 4 closes V4, V8, V9). Use the *"Closed by"* column above to navigate.
 > - **There are ~12 toggles for 10 vulnerabilities.** A few vulnerabilities need more than one control (e.g. V4 = least-privilege **and** human-in-the-loop), so the posture panel shows a few more switches than there are `Vn`. That's expected.
+> - **The Module 4 "tools" trio are *three different trust boundaries*, not one repeated bug.** **V4** = the app's *own* tools are over-powered (IDOR / SQL injection / unapproved transfers → boundary *app → database*). **V8** = the code interpreter runs *model-written code* on the host (→ boundary *model → runtime*, RCE). **V9** = the agent calls a *remote* MCP tool server it doesn't control (→ boundary *app → third-party supply chain*, poisoned tool output). Different boundary, different fix — they only share Module 4.
+> - **"Runtime" (V7) ≠ "code execution" (V8).** **V8** is about *what code is allowed to run* (sandbox the interpreter). **V7** is about *where the service runs* — private endpoints, monitoring, safe errors. V8 is exploited from the chat; V7 is an infra posture you *inspect*, not click.
 
 </div>
 
@@ -106,7 +108,7 @@ Every module banner and the final reference table also tag each weakness with a 
 | Code | Agentic threat (plain English) | Where you meet it |
 |:---:|---|---|
 | **T1** | Memory / knowledge-base poisoning | V6 — Modules 2, 8 |
-| **T2** | Tool misuse | V4, V9 — Module 4 |
+| **T2** | Tool misuse | V4 (local tools), V9 (remote MCP) — Module 4 |
 | **T3** | Privilege compromise | V5 — Module 5 |
 | **T4** | Resource overload (cost / DoS) | V7, V10 — Module 6 |
 | **T5** | Cascading hallucinations | V1 — Module 1 |
