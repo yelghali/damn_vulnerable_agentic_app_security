@@ -31,6 +31,14 @@ sections_title:
   - "Reference — vulnerability ↔ standards map"
 ---
 
+<style>
+/* Widen the MOAW content column so pages use more horizontal space */
+.container { max-width: min(1180px, 94vw) !important; }
+/* Let wide tables and code blocks breathe */
+.container table { display: table; width: 100%; }
+.container pre { max-width: 100%; }
+</style>
+
 # Hardening a Damn Vulnerable Agentic AI App
 
 Welcome! In this hands-on lab you will take **Zava Wealth Advisor** — a deliberately insecure, multi-agent personal-finance assistant — and harden it into a secure application that follows **Microsoft AI app + data security best practices**.
