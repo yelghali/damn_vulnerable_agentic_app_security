@@ -25,7 +25,7 @@ changes — ending every module with a verifiable "before vs. after".
 | V4 | Overpermissioned tools, no HITL | Scoped DB role + RLS, human-in-the-loop, allow-listing |
 | V5 | Weak OAuth / overpermissive RBAC | Entra OBO + managed identity + Key Vault + least-priv RBAC |
 | V6 | Data leakage / poisoning | Trusted ingestion, indirect-injection defense, Purview/DSPM, groundedness |
-| V7 | Insecure runtime | Private endpoints, Defender for Cloud AI, Monitor, safe errors |
+| V7 | Insecure infrastructure | Private endpoints, Defender for Cloud AI, Monitor, safe errors |
 | V8 | Unsafe code execution | Sandboxed Foundry Code Interpreter |
 | V9 | Insecure MCP tool integration | Pinned servers, scoped OBO, tool allow-list, guarded output |
 | V10 | No AI gateway | Azure API Management (token limits, auth, logging, caching) |

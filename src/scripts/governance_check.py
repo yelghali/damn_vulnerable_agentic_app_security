@@ -85,7 +85,7 @@ CONTROLS = [
     Control("Document-level security trimming", "enable_doc_security",
             "T3", "V5", False,
             "AI Search results are trimmed to the caller's entitlements."),
-    Control("Secure runtime (private endpoints, monitoring)", "enable_secure_runtime",
+    Control("Secure infrastructure (private endpoints, monitoring)", "enable_secure_runtime",
             "T8", "V7", False,
             "No public model/tool surface; requests are audited."),
     Control("AI gateway (token limits, key custody)", "enable_ai_gateway",

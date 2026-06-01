@@ -16,7 +16,7 @@ const TOGGLE_LABELS = {
   obo: "Entra OBO / identity (V5)",
   doc_security: "Doc-level security (V5)",
   groundedness: "Groundedness (V6)",
-  secure_runtime: "Secure runtime (V7)",
+  secure_runtime: "Secure infrastructure (V7)",
   mcp_tool_security: "MCP tool scoping (V9)",
   ai_gateway: "AI gateway / APIM (V10)",
 };
