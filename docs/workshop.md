@@ -1019,7 +1019,7 @@ The biggest behavioral change is `transfer_funds`. With HITL on, the agent stops
 
 ## Module 5 — Entra ID identity & AI Search document security
 
-> ⏱️ ~40 min · **Azure layer: Entra ID + AI Search ACLs** · Fixes **V5** · OWASP LLM06 · Agentic T3/T9
+> ⏱️ ~40 min · **Azure layer: Entra ID + AI Search ACLs** · Fixes **V5** · OWASP LLM06 / LLM08 · Agentic T3/T9
 >
 > **What this module fixes:** **identity is broken (V5)** — the API blindly trusts a client-sent `customer_id`/`groups` and there's no real user identity, so anyone can impersonate anyone and read restricted documents. You add Entra ID On-Behalf-Of auth and document-level security trimming.
 
@@ -1045,7 +1045,7 @@ pytest src/tests/test_vulnerabilities.py::test_v5_no_trimming_exposes_restricted
 
 ### Why it's dangerous
 
-**Identity spoofing (Agentic T9)** and **privilege compromise (T3)**: client-supplied identity is attacker-controlled. Without document-level trimming, AI Search leaks restricted content (**OWASP LLM06**).
+**Identity spoofing (Agentic T9)** and **privilege compromise (T3)**: client-supplied identity is attacker-controlled. Without document-level trimming, **retrieval returns documents the caller isn't entitled to** — the access-control face of **OWASP LLM08 (Vector & Embedding Weaknesses)** — and the broken identity that enables it is **excessive agency / broken authZ (LLM06)**.
 
 
 <details>
@@ -1555,10 +1555,22 @@ Where Module 10 is automated coverage, the capstone is the human, integrative *"
 | V2 | No guardrails | LLM01 / LLM05 | T6 | Content Safety / Prompt Shields |
 | V3 | PII / prompt leak | LLM02 / LLM07 | T15 | Purview + AI Language PII |
 | V4 | Overpermissioned tools | LLM06 | T2 / T10 | Least-priv + HITL |
-| V5 | Weak OAuth / RBAC | LLM06 | T3 / T9 | Entra OBO + RBAC + Key Vault |
-| V6 | Data leakage / poisoning | LLM04 / LLM08 / LLM01 | T1 / T12 | Purview / DSPM + groundedness |
+| V5 | Weak OAuth / RBAC + retrieval leakage | LLM06 / LLM08 | T3 / T9 | Entra OBO + RBAC + AI Search ACLs + Key Vault |
+| V6 | Data poisoning / indirect injection | LLM04 / LLM01 | T1 / T12 | Purview / DSPM + groundedness |
 | V7 | Insecure infrastructure | LLM10 | T4 / T8 | Private endpoints + Defender + Monitor |
 | V8 | Unsafe code execution | LLM05 / LLM06 | T11 | Sandboxed Code Interpreter |
-| V9 | Insecure MCP integration | LLM06 / LLM01 / LLM03 | T2 / T12 | MCP allow-list + scoped OBO + guard |
-| V11 | Agent-to-agent poisoning | LLM01 / LLM06 | T12 | Inter-agent message guard (re-scan handoffs) |
+| V9 | Insecure MCP integration | LLM03 / LLM06 / LLM01 | T2 / T12 | MCP allow-list + scoped OBO + guard |
 | V10 | No AI gateway | LLM10 / LLM02 | T4 / T8 | Azure API Management AI gateway |
+| V11 | Agent-to-agent poisoning | LLM01 / LLM06 | T12 | Inter-agent message guard (re-scan handoffs) |
+
+> **OWASP LLM Top 10 (2025) — coverage is complete and *runnable*, not asserted.** Every category below is mitigated by at least one lab control; `python -m src.scripts.governance_check` prints the live `10/10` rollup (and which are still off in the vulnerable baseline).
+>
+> | OWASP LLM (2025) | Covered by | OWASP LLM (2025) | Covered by |
+> |---|---|---|---|
+> | LLM01 Prompt Injection | V2, V6, V9, V11 | LLM06 Excessive Agency | V4, V5, V8, V9, V11 |
+> | LLM02 Sensitive Info Disclosure | V3, V10 | LLM07 System-Prompt Leakage | V3 |
+> | LLM03 Supply Chain | V9 | LLM08 Vector & Embedding Weakness | V5 *(retrieval access leakage)* |
+> | LLM04 Data & Model Poisoning | V6 | LLM09 Misinformation | V1 |
+> | LLM05 Improper Output Handling | V1, V8 | LLM10 Unbounded Consumption | V7, V10 |
+>
+> **Note on LLM08:** this lab covers the *access-control* face of LLM08 — retrieval returning documents the caller isn't entitled to (V5 / AI Search ACLs). It does **not** demonstrate embedding-inversion or vector-store poisoning attacks (those need a live vector index); that gap is intentional, not an omission.

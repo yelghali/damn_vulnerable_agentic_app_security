@@ -37,6 +37,7 @@ class Control:
 
     name: str
     toggle: str          # the Settings attribute that enables it
+    owasp: str           # OWASP LLM Top 10 (2025) ID(s) it mitigates
     threat: str          # OWASP Agentic threat code(s) it mitigates
     vuln: str            # the lab Vn it closes
     critical: bool       # critical controls must pass for a non-zero gate
@@ -56,43 +57,43 @@ INVENTORY = {
 # The controls the policy expects to be in force, highest-risk first.
 CONTROLS = [
     Control("Human-in-the-loop on money movement", "enable_hitl",
-            "T10", "V4", True,
+            "LLM06", "T10", "V4", True,
             "transfer_funds / send_statement_email must pause for human approval."),
     Control("Tool least-privilege (object authZ + parameterized SQL)", "enable_tool_least_priv",
-            "T2/T3", "V4", True,
+            "LLM06", "T2/T3", "V4", True,
             "Read tools enforce caller-owns-data; no string-interpolated SQL (IDOR/SQLi)."),
     Control("Sandboxed code execution", "enable_code_sandbox",
-            "T11", "V8", True,
+            "LLM05/06", "T11", "V8", True,
             "Model-generated report code blocks imports / file & network IO (RCE)."),
     Control("MCP tool allow-list + output re-scan", "enable_mcp_tool_security",
-            "T2/T12", "V9", True,
+            "LLM03/06", "T2/T12", "V9", True,
             "MCP calls hit a pinned server, allow-listed tools only, output re-scanned."),
     Control("Agent-to-agent message guard", "enable_a2a_guard",
-            "T12", "V11", True,
+            "LLM01/06", "T12", "V11", True,
             "Cross-agent handoffs are re-scanned; forged state-changing directives are refused."),
     Control("PII detection & redaction", "enable_pii_redaction",
-            "T15", "V3", True,
+            "LLM02/07", "T15", "V3", True,
             "SSN / account numbers redacted before logs, model and client."),
     Control("Identity propagation (Entra OBO)", "enable_obo",
-            "T9", "V5", True,
+            "LLM06", "T9", "V5", True,
             "Caller identity is verified server-side, not trusted from the client."),
     Control("Content Safety guardrails", "enable_content_safety",
-            "T6", "V1/V2", False,
+            "LLM05/09", "T6", "V1/V2", False,
             "Harmful / off-topic input and output are filtered."),
     Control("Prompt Shields (direct + indirect injection)", "enable_prompt_shields",
-            "T6/T12", "V2/V6", False,
+            "LLM01", "T6/T12", "V2/V6", False,
             "Jailbreaks and poisoned-document instructions are detected."),
     Control("Groundedness verification", "enable_groundedness",
-            "T1", "V6", False,
+            "LLM04/09", "T1", "V6", False,
             "Answers must be supported by trusted sources."),
     Control("Document-level security trimming", "enable_doc_security",
-            "T3", "V5", False,
-            "AI Search results are trimmed to the caller's entitlements."),
+            "LLM08", "T3", "V5", False,
+            "Retrieval is trimmed to the caller's entitlements (vector/RAG access leakage)."),
     Control("Secure infrastructure (private endpoints, monitoring)", "enable_secure_runtime",
-            "T8", "V7", False,
+            "LLM10", "T8", "V7", False,
             "No public model/tool surface; requests are audited."),
     Control("AI gateway (token limits, key custody)", "enable_ai_gateway",
-            "T4", "V10", False,
+            "LLM10", "T4", "V10", False,
             "Model keys live in APIM; spend is bounded; calls are logged."),
 ]
 
@@ -100,6 +101,38 @@ CONTROLS = [
 def evaluate() -> list[tuple[Control, bool]]:
     settings = get_settings()
     return [(c, bool(getattr(settings, c.toggle))) for c in CONTROLS]
+
+
+# The full OWASP LLM Top 10 (2025) — used to prove coverage is complete, not asserted.
+_OWASP_LLM_TOP10 = [f"LLM{n:02d}" for n in range(1, 11)]
+
+
+def _owasp_ids(field: str) -> set[str]:
+    """Expand a compact OWASP field like 'LLM05/06' -> {'LLM05', 'LLM06'}."""
+    ids: set[str] = set()
+    for token in field.split("/"):
+        token = token.strip()
+        if token.startswith("LLM"):
+            ids.add(token)                                # 'LLM05'
+        elif token.isdigit():
+            ids.add(f"LLM{int(token):02d}")               # '06' -> 'LLM06'
+    return ids
+
+
+def _print_standards_coverage(results: list[tuple[Control, bool]]) -> None:
+    """Show OWASP LLM Top 10 coverage — what the lab maps, and what is enabled now."""
+    mapped: set[str] = set()
+    enabled: set[str] = set()
+    for control, ok in results:
+        ids = _owasp_ids(control.owasp)
+        mapped |= ids
+        if ok:
+            enabled |= ids
+    missing_now = [i for i in _OWASP_LLM_TOP10 if i not in enabled]
+    print(f"OWASP LLM Top 10 (2025): {len(mapped)}/10 categories mapped by lab controls · "
+          f"{len(enabled)}/10 mitigated by the current posture.")
+    if missing_now:
+        print(f"  Not yet mitigated: {', '.join(missing_now)}")
 
 
 def render(results: list[tuple[Control, bool]]) -> int:
@@ -111,8 +144,8 @@ def render(results: list[tuple[Control, bool]]) -> int:
           f"{sum(len(v) for k, v in INVENTORY.items() if k != 'orchestrator')} tools\n")
 
     width = max(len(c.name) for c, _ in results)
-    print(f"{'CONTROL':<{width}}  {'STATUS':<8} {'THREAT':<8} VULN")
-    print("-" * (width + 26))
+    print(f"{'CONTROL':<{width}}  {'STATUS':<7} {'OWASP':<10} {'THREAT':<8} VULN")
+    print("-" * (width + 36))
     failed_critical = 0
     passed = 0
     for control, ok in results:
@@ -122,12 +155,14 @@ def render(results: list[tuple[Control, bool]]) -> int:
         elif control.critical:
             failed_critical += 1
         flag = "" if ok or not control.critical else "  <- critical"
-        print(f"{control.name:<{width}}  {status:<8} {control.threat:<8} {control.vuln}{flag}")
+        print(f"{control.name:<{width}}  {status:<7} {control.owasp:<10} "
+              f"{control.threat:<8} {control.vuln}{flag}")
 
     total = len(results)
-    print("-" * (width + 26))
+    print("-" * (width + 36))
     print(f"\nPosture: {passed}/{total} controls enabled · "
           f"{failed_critical} critical gap(s).")
+    _print_standards_coverage(results)
 
     if failed_critical:
         print("\nRESULT: FAIL — critical governance controls are off. "

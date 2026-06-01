@@ -14,6 +14,13 @@ kind: AgentPolicy
 metadata:
   name: zava-wealth-advisor
   owner: zava-security-lab
+  # Standards this policy is designed to cover. The offline posture check
+  # (src/scripts/governance_check.py) prints a live OWASP LLM Top 10 rollup so
+  # this claim is verifiable, not asserted.
+  standards:
+    owasp_llm_top10_2025: [LLM01, LLM02, LLM03, LLM04, LLM05, LLM06, LLM07, LLM08, LLM09, LLM10]
+    owasp_agentic_threats: [T1, T2, T3, T4, T5, T6, T8, T9, T10, T11, T12, T15]
+    out_of_scope: [T7, T13, T14]   # need multi-step autonomy / live operators
 
 # What happens to a tool call that no rule explicitly allows.
 default_action: deny
