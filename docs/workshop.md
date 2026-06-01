@@ -469,29 +469,39 @@ An **ungoverned model** (V1) and **missing guardrails** (V2) let the agent produ
 <details>
 <summary><strong>Remediate (Part 2) — Azure layer: Foundry model + agent guardrails</strong></summary>
 
-There are three layers to this control. The **canonical** one lives on **Foundry**, not in app code — but understanding *why*, and how the in-app mirror and the prompt work together, is the point.
+There are three layers to this control. The **canonical** one lives on **Foundry**, not in app code — but understanding *why*, and how the in-app guard (which itself calls the **real** Azure Content Safety / Prompt Shields APIs when configured) and the prompt work together, is the point.
 
 #### (a) The secure design & code
 
-The offline mirror in [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py) shows the *shape* of the decision a content filter makes — classify the text against harmful categories plus an org-specific off-topic blocklist, and refuse on a hit:
+> **Is this mocked? No.** [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py) is **dual-path** and decides at call time: when `CONTENT_SAFETY_ENDPOINT` + key are set it calls the **genuine** Azure AI Content Safety `text:analyze` (and `text:shieldPrompt` for V2, Azure AI Language `recognize_pii_entities` for V3) over the real REST/SDK surface. The keyword/severity heuristic below runs **only** when no Azure endpoint is configured — so Part 1 can demo the before/after on a laptop with **zero Azure**, exactly as the lab requires. It is a *fallback demonstrator*, not a stub of a test.
+
+The heuristic path shows the *shape* of the decision a content filter makes — classify the text against the four harm categories (each with its own severity threshold) plus an org-specific off-topic custom category, and refuse on a hit:
 
 ```python
 def check_content_safety(text: str) -> None:
-    settings = get_settings()
-    if not settings.enable_content_safety:
+    if not get_settings().enable_content_safety:
         return  # LAB-VULN(V1/V2): no content filtering
-    low = text.lower()
-    for category, terms in _CATEGORY_TERMS.items():        # sexual / hate / violence / self-harm
-        threshold = settings.category_threshold(category)  # each its OWN slider, like the portal
-        if any(sev >= threshold and t in low for t, sev in terms.items()):
-            raise SafetyViolation(f"Blocked harmful content ({category}).", category)
-    if settings.content_safety_block_off_topic:             # custom category (org rule), separate dial
-        for term in _OFF_TOPIC_TERMS:                       # politics, "tell me a joke about", ...
-            if term in low:
-                raise SafetyViolation("Request is outside Zava's financial scope.", "off_topic")
+    creds = _content_safety_creds()
+    if creds is not None:
+        _azure_check_content_safety(text, creds)   # <-- REAL Azure AI Content Safety text:analyze
+    else:
+        _heuristic_content_safety(text)            # <-- offline fallback only (no endpoint set)
+    # ... custom off-topic category applied on top ...
 ```
 
-In Azure this heuristic is replaced by the real **Azure AI Content Safety** classifier (severity-scored `Hate/Sexual/Violence/SelfHarm` 0–7, **each category configured independently**) plus a **custom category / blocklist** for the off-topic terms. The same call is made *twice* — on the user input **and** on the model output — which is why the orchestrator re-checks the response before returning it.
+The offline classifier itself, for reference:
+
+```python
+def _heuristic_content_safety(text: str) -> None:
+    low = text.lower()
+    settings = get_settings()
+    for category, terms in _CATEGORY_TERMS.items():        # sexual / hate / violence / self-harm
+        threshold = settings.category_threshold(category)  # each its OWN slider, like the portal
+        if any(sev >= threshold and term in low for term, sev in terms.items()):
+            raise SafetyViolation(f"Blocked harmful content ({category}).", category)
+```
+
+When Azure is configured, that heuristic is **not used** — the real **Azure AI Content Safety** classifier scores `Hate/Sexual/Violence/SelfHarm` 0–7 (**each category configured independently**) and a **custom category / blocklist** handles the off-topic terms. The same call is made *twice* — on the user input **and** on the model output — which is why the orchestrator re-checks the response before returning it.
 
 The second layer is the **system prompt**. Compare `prompts/vulnerable/orchestrator.md` (a bare "you are a helpful assistant") with `prompts/secure/orchestrator.md`, which scopes the agent to Zava finance topics and refuses configuration/identity-leak requests. A hardened prompt is *defense in depth*, not the primary control — it's bypassable by injection (that's Module 2), so it never stands alone.
 
@@ -508,7 +518,7 @@ resource "azurerm_cognitive_deployment" "governed" {
 }
 ```
 
-You set the strictness once in IaC (`content_filter_severity_threshold = "Low"`); the platform then filters every request **and** response. The app simply points at the **governed** deployment — `active_model_deployment` in [src/config.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/config.py) selects it when `enable_content_safety` is on. No filtering logic ships in the app; the platform owns it. The in-app `check_content_safety` is the API-layer backstop / offline mirror only.
+You set the strictness once in IaC (`content_filter_severity_threshold = "Low"`); the platform then filters every request **and** response. The app simply points at the **governed** deployment — `active_model_deployment` in [src/config.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/config.py) selects it when `enable_content_safety` is on. No filtering logic *needs* to ship in the app; the platform owns it. The in-app `check_content_safety` is the API-layer backstop — it calls the **real** Content Safety service when an endpoint is configured, and falls back to the offline heuristic only when there isn't one.
 
 > Org-specific "no politics / no jokes" rules that aren't a harm category go in a **custom blocklist** you attach to the same Content Safety resource and reference from the policy — that's the part you own and tune per tenant.
 
@@ -539,7 +549,7 @@ Read the panel carefully — it names the gaps the rest of Part 2 closes:
 
 #### (c) Design notes
 
-- **Why platform-first?** A filter bound to the deployment can't be skipped by a code path that forgot to call the guard. The in-app `check_content_safety` exists only for the offline before/after and as an API-layer backstop.
+- **Why platform-first?** A filter bound to the deployment can't be skipped by a code path that forgot to call the guard. The in-app `check_content_safety` is a defense-in-depth backstop — it calls the real Content Safety service when configured, and provides the offline before/after when no endpoint is set.
 - **Blocklists vs. categories.** Harm categories are model-driven; "no politics / no jokes" is a *business* rule, so it belongs in a custom blocklist you own and can tune per tenant.
 - **Output filtering matters.** Filtering only the input misses harmful *completions*; always filter both directions.
 
