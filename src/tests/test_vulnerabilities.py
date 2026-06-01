@@ -101,6 +101,26 @@ def test_v4_idor_allowed_when_disabled(monkeypatch):
     assert rows  # vulnerable baseline leaks another customer's data
 
 
+# --- V4: SQL injection through the accounts agent --------------------------
+def test_v4_sqli_dumps_all_when_disabled(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_TOOL_LEAST_PRIV="false")
+    from src.agents.accounts import agent as accounts_agent
+
+    res = accounts_agent.run("Show accounts for CUST-1001' OR '1'='1", _ctx())
+    # The injection suffix reaches the string-interpolated query and dumps every
+    # customer's accounts (more rows than CUST-1001 owns on its own).
+    assert res.answer.count("ACC-") > 2
+
+
+def test_v4_sqli_blocked_when_enabled(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_TOOL_LEAST_PRIV="true")
+    from src.agents.accounts import agent as accounts_agent
+
+    res = accounts_agent.run("Show accounts for CUST-1001' OR '1'='1", _ctx())
+    # Parameterized query + object-level authZ: no cross-customer dump.
+    assert res.blocked or "ACC-200" not in res.answer
+
+
 # --- V4: human-in-the-loop on transfers ------------------------------------
 def test_v4_hitl_requires_approval(monkeypatch):
     orch, _, _ = _reload_with(monkeypatch, ENABLE_HITL="true", ENABLE_TOOL_LEAST_PRIV="true")

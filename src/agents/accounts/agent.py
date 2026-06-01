@@ -13,9 +13,13 @@ def _target_customer(message: str, ctx: AgentContext) -> str | None:
 
     LAB-VULN(V4): the vulnerable baseline lets the user name *any* customer_id
     in their message. The tool layer (least-priv) is what actually enforces that
-    the caller only sees their own data in secure mode.
+    the caller only sees their own data in secure mode. The capture also keeps
+    any SQL-injection suffix the user appends (e.g. ``CUST-1001' OR '1'='1``) so
+    the string-interpolated query in ``db.get_accounts`` is reachable from chat.
     """
-    m = re.search(r"\b(CUST-\d+)\b", message, re.IGNORECASE)
+    m = re.search(
+        r"\b(CUST-\d+(?:'\s*(?:OR|AND|UNION|--|;)[^\n]*)?)", message, re.IGNORECASE
+    )
     if m:
         return m.group(1).upper()
     return ctx.customer_id

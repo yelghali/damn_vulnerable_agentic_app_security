@@ -114,12 +114,13 @@
     <div class="card side">
       <section>
         <h3>Security posture</h3>
+        <div class="hint">Read-only view of the active controls. Toggle them in <code>.env</code> / config, then reload.</div>
         <div class="toggles" id="toggles">loading&hellip;</div>
       </section>
       <section>
         <h3>Try an exploit &#128275;</h3>
         <div class="chips" id="exploits"></div>
-        <div class="hint">In the <b>vulnerable</b> baseline these succeed. After you remediate each module (flip the toggle / harden the code), they should be blocked or redacted.</div>
+        <div class="hint">Click a chip to send it immediately. In the <b>vulnerable</b> baseline these succeed. After you remediate each module (flip the toggle / harden the code), they should be blocked or redacted.</div>
       </section>
       <section>
         <h3>Benign examples</h3>
