@@ -1,9 +1,16 @@
 """Safety guard used as Agent Framework middleware.
 
-Centralizes the input/output protections that the lab toggles on:
+Centralizes the input/output protections that the lab toggles on. Each is a
+*separate, independently testable aspect* of the guardrail stack, mirroring the
+distinct features of Azure AI Content Safety / Foundry guardrails:
 
-* **Content Safety** (V1/V2) — harmful categories (sexual, hate, violence,
-  self-harm) + off-topic/política blocklist, mirroring Azure AI Content Safety.
+* **Content Safety harm categories** (V1) — the four Azure categories *Sexual,
+  Hate, Violence, Self-Harm*, each with its **own severity threshold** (0-7),
+  exactly like the per-category sliders in the portal.
+* **Custom category** (V1) — an org-specific "off-topic/politics" rule that is
+  *not* a model harm category, mirroring Azure Content Safety **custom
+  categories / blocklists**; toggled separately (an alternative to scoping it
+  in the system prompt).
 * **Prompt Shields** (V2) — detect direct jailbreaks in user input *and*
   indirect prompt-injection payloads embedded in retrieved documents.
 * **PII redaction** (V3) — detect + redact PII before it reaches the model,
@@ -52,15 +59,20 @@ _CS_GROUNDEDNESS_API_VERSION = "2024-09-15-preview"
 # and milder terms (e.g. "nude" at 2) stop being blocked while "build a bomb"
 # (6) still is.
 _CATEGORY_TERMS: dict[str, dict[str, int]] = {
-    "sexual": {"explicit sexual": 6, "sexual act": 4, "nude": 2, "porn": 6},
-    "hate": {"racial slur": 6, "ethnic cleansing": 7, "subhuman": 4, "hate group": 4},
-    "violence": {"build a bomb": 6, "make a weapon": 4, "kill": 4, "shoot up": 6},
-    "self_harm": {"kill myself": 6, "how to suicide": 6, "end my life": 4, "self-harm": 4},
+    "sexual": {"explicit sexual": 6, "sexual act": 4, "nude": 2, "porn": 6, "send nudes": 6},
+    "hate": {"racial slur": 6, "ethnic cleansing": 7, "subhuman": 4, "hate group": 4,
+             "offensive joke about": 4, "inferior race": 6},
+    "violence": {"build a bomb": 6, "make a weapon": 4, "kill": 4, "shoot up": 6, "how to hurt": 4},
+    "self_harm": {"kill myself": 6, "how to suicide": 6, "end my life": 4, "self-harm": 4,
+                  "hurt myself": 4},
 }
-# Off-topic / out-of-scope topics a finance assistant must decline (RAI).
-# This is a *custom blocklist* (an org business rule, not a model harm category),
-# so it has its own on/off knob (CONTENT_SAFETY_BLOCK_OFF_TOPIC).
-_OFF_TOPIC_TERMS = ["who should i vote", "political party", "election", "tell me a joke about"]
+# Off-topic / out-of-scope topics a finance assistant must decline. This is a
+# *custom category* (an org business rule, not a model harm category), so it has
+# its own on/off knob (CONTENT_SAFETY_BLOCK_OFF_TOPIC) and mirrors Azure Content
+# Safety custom categories / blocklists. The alternative control is scoping the
+# system prompt (prompts/secure/orchestrator.md) — both are shown in the lab.
+_OFF_TOPIC_TERMS = ["who should i vote", "political party", "election", "tell me a joke about",
+                    "your opinion on politics", "democrat", "republican"]
 
 # --- Prompt Shields jailbreak / injection patterns -------------------------
 _INJECTION_PATTERNS = [
@@ -138,10 +150,16 @@ def _azure_check_content_safety(text: str, creds: tuple[str, str]) -> None:
         timeout=10.0,
     )
     resp.raise_for_status()
-    threshold = get_settings().content_safety_severity_threshold
+    settings = get_settings()
+    # Azure returns category names Hate / Sexual / Violence / SelfHarm; map to
+    # our snake_case keys so each gets its own per-category threshold (mirroring
+    # the per-category sliders in the Content Safety portal).
+    _alias = {"selfharm": "self_harm"}
     for item in resp.json().get("categoriesAnalysis", []):
+        category = str(item.get("category", "harmful")).lower()
+        key = _alias.get(category, category)
+        threshold = settings.category_threshold(key)
         if int(item.get("severity", 0)) >= threshold:
-            category = str(item.get("category", "harmful")).lower()
             raise SafetyViolation(f"Blocked harmful content ({category}).", category)
 
 
@@ -212,9 +230,10 @@ def check_content_safety(text: str) -> None:
             _heuristic_content_safety(text)
     else:
         _heuristic_content_safety(text)
-    # Custom off-topic blocklist (org rule) — independently toggleable so a
-    # learner can see the difference between a model harm category and a
-    # business "no politics / no jokes" rule.
+    # Custom category (org rule) — independently toggleable so a learner can see
+    # the difference between a model harm category and a business "no politics /
+    # no jokes" rule. In Azure this is a custom category / blocklist on the same
+    # Content Safety resource (or scoped away in the system prompt).
     if get_settings().content_safety_block_off_topic:
         low = text.lower()
         for term in _OFF_TOPIC_TERMS:
@@ -224,8 +243,9 @@ def check_content_safety(text: str) -> None:
 
 def _heuristic_content_safety(text: str) -> None:
     low = text.lower()
-    threshold = get_settings().content_safety_severity_threshold
+    settings = get_settings()
     for category, terms in _CATEGORY_TERMS.items():
+        threshold = settings.category_threshold(category)
         if any(sev >= threshold and term in low for term, sev in terms.items()):
             raise SafetyViolation(f"Blocked harmful content ({category}).", category)
 

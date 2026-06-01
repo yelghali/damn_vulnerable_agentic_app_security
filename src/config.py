@@ -86,12 +86,28 @@ class Settings(BaseSettings):
     content_safety_endpoint: str = Field(default="", alias="CONTENT_SAFETY_ENDPOINT")
     content_safety_key: str = Field(default="", alias="CONTENT_SAFETY_KEY")
     # Guardrail tuning (Module 1) — mirrors the Azure Content Safety portal,
-    # where you don't just turn the filter on/off, you *tune* it:
-    #   * severity threshold 1..7 (lower = stricter; a category blocks at/above it)
-    #   * an org "off-topic" custom blocklist (e.g. politics) you can detach
+    # where you don't just turn the filter on/off, you *tune* it per aspect:
+    #   * a global severity threshold 1..7 (lower = stricter; a category blocks
+    #     at/above it) — the default for every harm category
+    #   * per-category overrides for the 4 Azure harm categories (Hate, Sexual,
+    #     Violence, Self-Harm), each its own slider exactly like the portal.
+    #     None -> inherit the global threshold.
+    #   * an org "off-topic" custom category (e.g. politics) you can detach
     # These only take effect while enable_content_safety is on.
     content_safety_severity_threshold: int = Field(
         default=2, alias="CONTENT_SAFETY_SEVERITY_THRESHOLD"
+    )
+    content_safety_threshold_hate: int | None = Field(
+        default=None, alias="CONTENT_SAFETY_THRESHOLD_HATE"
+    )
+    content_safety_threshold_sexual: int | None = Field(
+        default=None, alias="CONTENT_SAFETY_THRESHOLD_SEXUAL"
+    )
+    content_safety_threshold_violence: int | None = Field(
+        default=None, alias="CONTENT_SAFETY_THRESHOLD_VIOLENCE"
+    )
+    content_safety_threshold_self_harm: int | None = Field(
+        default=None, alias="CONTENT_SAFETY_THRESHOLD_SELF_HARM"
     )
     content_safety_block_off_topic: bool = Field(
         default=True, alias="CONTENT_SAFETY_BLOCK_OFF_TOPIC"
@@ -149,6 +165,14 @@ class Settings(BaseSettings):
             if self.enable_content_safety
             else self.foundry_ungoverned_deployment
         )
+
+    def category_threshold(self, category: str) -> int:
+        """Severity threshold for one Azure harm category (hate / sexual /
+        violence / self_harm). Returns the per-category override if set, else
+        the global default — exactly like the per-category sliders in the
+        Azure Content Safety portal."""
+        override = getattr(self, f"content_safety_threshold_{category}", None)
+        return override if override is not None else self.content_safety_severity_threshold
 
     def summary(self) -> dict[str, bool]:
         """Toggle snapshot, surfaced in the UI banner so participants can see
