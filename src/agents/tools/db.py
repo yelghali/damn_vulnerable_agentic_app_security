@@ -143,6 +143,34 @@ def get_transactions(
         conn.close()
 
 
+def get_customer_profile(customer_id: str, caller_id: str | None = None) -> dict[str, Any]:
+    """Return a customer's profile, including **PII** (SSN, email, address).
+
+    This is the tool the V3 demo leans on: in the vulnerable baseline the SSN
+    and contact details flow straight back to the caller (and into the logs)
+    with no redaction. Module 3 redacts them on the way out.
+    """
+    _authorize(caller_id, customer_id)
+    conn = _offline_conn()
+    settings = get_settings()
+    try:
+        if settings.enable_tool_least_priv:
+            row = conn.execute(
+                "SELECT customer_id, full_name, email, ssn, address "
+                "FROM customers WHERE customer_id = ?",
+                (customer_id,),
+            ).fetchone()
+        else:
+            # LAB-VULN(V4): string-interpolated SQL -> injection.
+            row = conn.execute(
+                "SELECT customer_id, full_name, email, ssn, address "
+                f"FROM customers WHERE customer_id = '{customer_id}'"
+            ).fetchone()
+        return dict(row) if row else {}
+    finally:
+        conn.close()
+
+
 def get_credit_score(customer_id: str, caller_id: str | None = None) -> dict[str, Any]:
     """Return a customer's (sensitive) credit score."""
     _authorize(caller_id, customer_id)

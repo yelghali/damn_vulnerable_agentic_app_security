@@ -1,0 +1,65 @@
+# Zava Wealth Advisor — agent governance policy
+#
+# Format follows the Microsoft agent-governance-toolkit (AGT) schema
+# (https://github.com/microsoft/agent-governance-toolkit). It encodes the
+# *intended* posture of the lab's agents and tools so a governance check can be
+# run as a CI gate. The same rules map 1:1 to the ENABLE_* toggles you flip in
+# Part 2 — this file is the machine-readable version of "the answer key".
+#
+# Run it with the real toolkit:   agt verify --policy src/agents/governance/policy.yaml --strict
+# Or the offline fallback:        python -m src.scripts.governance_check
+
+apiVersion: governance.toolkit/v1
+kind: AgentPolicy
+metadata:
+  name: zava-wealth-advisor
+  owner: zava-security-lab
+
+# What happens to a tool call that no rule explicitly allows.
+default_action: deny
+
+rules:
+  # --- State-changing / irreversible actions: human gate (V4 / Agentic T10) ---
+  - name: require-approval-on-money-movement
+    condition: tool in ["transfer_funds", "send_statement_email"]
+    action: require_approval
+    approvers: ["account-owner"]
+    description: >
+      Irreversible actions (moving money, emailing statements) must pause for a
+      human-in-the-loop confirmation before they run. Maps to ENABLE_HITL.
+
+  # --- Read tools: allowed, but only for the caller's own data (V4 / T2,T3) ---
+  - name: allow-scoped-reads
+    condition: tool in ["get_accounts", "get_transactions", "get_credit_score", "get_customer_profile"]
+    action: allow
+    description: >
+      Read tools are permitted only with object-level authorization (the caller
+      may read only their own customer_id) and parameterized SQL. Maps to
+      ENABLE_TOOL_LEAST_PRIV.
+
+  # --- Code execution: never run untrusted imports / IO (V8 / Agentic T11) -----
+  - name: deny-unsandboxed-code
+    condition: tool == "generate_report" and capability == "arbitrary_code"
+    action: deny
+    description: >
+      Model-generated report code must run in a sandbox with no imports, no file
+      or network IO, and no dunder access. Maps to ENABLE_CODE_SANDBOX.
+
+  # --- MCP tools: pinned server + per-agent allow-list (V9 / Agentic T2,T12) ---
+  - name: restrict-mcp-tools
+    condition: transport == "mcp"
+    action: allow
+    allow_tools: ["get_accounts", "get_transactions", "get_credit_score"]
+    require:
+      - trusted_server
+      - output_rescan        # tool output is untrusted -> Prompt Shields + PII
+    description: >
+      MCP tool calls are allowed only to a pinned/trusted server, only for
+      allow-listed read tools, and their output is re-scanned before the model
+      sees it. Maps to ENABLE_MCP_TOOL_SECURITY.
+
+  # --- Anything else (e.g. an MCP server advertising transfer_funds) -----------
+  - name: deny-unknown-tools
+    condition: default
+    action: deny
+    description: A tool not named by a rule above is refused (default_action).

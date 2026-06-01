@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import re
 
-from src.agents.tools.db import ToolError, get_accounts, get_credit_score, get_transactions
+from src.agents.tools.db import (
+    ToolError,
+    get_accounts,
+    get_credit_score,
+    get_customer_profile,
+    get_transactions,
+)
 from src.agents.types import AgentContext, TurnResult
 
 
@@ -33,7 +39,16 @@ def run(message: str, ctx: AgentContext) -> TurnResult:
 
     low = message.lower()
     try:
-        if "credit" in low or "score" in low:
+        if any(k in low for k in ("ssn", "social security", "profile", "personal", "address", "full name")):
+            data = get_customer_profile(customer_id, caller_id=ctx.customer_id)
+            events.append(f"accounts: get_customer_profile({customer_id})")
+            body = (
+                f"Name: {data.get('full_name', 'n/a')}\n"
+                f"SSN: {data.get('ssn', 'n/a')}\n"
+                f"Email: {data.get('email', 'n/a')}\n"
+                f"Address: {data.get('address', 'n/a')}"
+            ) if data else "No profile found."
+        elif "credit" in low or "score" in low:
             data = get_credit_score(customer_id, caller_id=ctx.customer_id)
             events.append(f"accounts: get_credit_score({customer_id})")
             body = f"Credit score: {data.get('score', 'n/a')} ({data.get('bureau', '')})"

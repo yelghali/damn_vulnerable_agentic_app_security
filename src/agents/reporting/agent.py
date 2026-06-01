@@ -45,14 +45,24 @@ def run(message: str, ctx: AgentContext) -> TurnResult:
     events: list[str] = []
     accounts = get_accounts(ctx.customer_id or "", caller_id=ctx.customer_id)
 
-    # If the user dictated code, run *that* (V8). Otherwise the canned summary.
     injected = _extract_code(message)
-    code = f"{injected}\n{_REPORT_CODE}" if injected else _REPORT_CODE
     try:
-        out = generate_report(code, data={"accounts": accounts})
         if injected:
+            # V8: run the user/model-dictated code. Whatever it assigns to
+            # `result` is surfaced back to the caller — so an exfiltration like
+            # `result = open('.env').read()` is *visibly* returned in the
+            # vulnerable baseline, and rejected by the sandbox when it's on.
+            out = generate_report(injected, data={"accounts": accounts})
             events.append("reporting: executed user-supplied code in code interpreter")
-        else:
+            if out["result"] is not None:
+                return TurnResult(
+                    answer=f"Report output:\n{out['result']}",
+                    agent="reporting",
+                    events=events,
+                )
+            events.append("reporting: user code returned no result; using canned summary")
+        out = generate_report(_REPORT_CODE, data={"accounts": accounts})
+        if not injected:
             events.append("reporting: generate_report executed in code interpreter")
         r = out["result"] or {}
         body = (

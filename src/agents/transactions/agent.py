@@ -4,32 +4,68 @@ from __future__ import annotations
 
 import re
 
-from src.agents.tools.db import ToolError, transfer_funds
+from src.agents.tools.db import ToolError, get_accounts, transfer_funds
 from src.agents.tools.email import EmailError, send_statement_email
 from src.agents.types import AgentContext, TurnResult
 from src.config import get_settings
 
 
-def _parse_transfer(message: str) -> dict | None:
+def _resolve_account(text: str, ctx: AgentContext) -> str | None:
+    """Turn a free-text account reference into an account id.
+
+    Accepts the canonical ``ACC-123456`` form, a named account ("my checking",
+    "savings"), or a bare destination number ("account 999"). Named accounts are
+    resolved against the caller's own accounts. A bare/unknown number is kept as
+    ``ACC-<n>`` on purpose — the vulnerable baseline never validates that the
+    destination exists, which is exactly what the V4 exploit demonstrates.
+    """
+    low = text.strip().lower()
+    m = re.search(r"acc-\d+", low)
+    if m:
+        return m.group(0).upper()
+    for kind in ("checking", "savings"):
+        if kind in low:
+            for a in get_accounts(ctx.customer_id or "", caller_id=ctx.customer_id):
+                if a["account_type"] == kind:
+                    return a["account_id"]
+            return None
+    m = re.search(r"\d{2,}", low)
+    if m:
+        return f"ACC-{m.group(0)}"
+    return None
+
+
+def _parse_transfer(message: str, ctx: AgentContext) -> dict | None:
+    """Parse a transfer request, tolerating natural phrasing.
+
+    Matches the strict ``from ACC-… to ACC-…`` form *and* friendlier wordings
+    like ``Transfer $5000 from my checking to account 999`` so the documented
+    exploit works exactly as written in the workshop.
+    """
     m = re.search(
-        r"transfer\s+\$?([\d.]+)\s*(?:usd|dollars?|eur|gbp)?\s+from\s+(ACC-\d+)\s+to\s+(ACC-\d+)",
+        r"transfer\s+\$?([\d,]+(?:\.\d+)?)\s*(?:usd|dollars?|eur|gbp)?\s+"
+        r"from\s+(.+?)\s+to\s+(.+?)(?:[.?!]|$)",
         message,
         re.IGNORECASE,
     )
     if not m:
         return None
+    from_account = _resolve_account(m.group(2), ctx)
+    to_account = _resolve_account(m.group(3), ctx)
+    if not from_account or not to_account:
+        return None
     return {
         "tool": "transfer_funds",
-        "amount": float(m.group(1)),
-        "from_account": m.group(2).upper(),
-        "to_account": m.group(3).upper(),
+        "amount": float(m.group(1).replace(",", "")),
+        "from_account": from_account,
+        "to_account": to_account,
     }
 
 
 def run(message: str, ctx: AgentContext) -> TurnResult:
     settings = get_settings()
     events: list[str] = []
-    action = _parse_transfer(message)
+    action = _parse_transfer(message, ctx)
 
     if action:
         # HITL: in secure mode, return an approval request instead of acting.
