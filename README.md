@@ -165,6 +165,27 @@ The full guided lab lives in **[docs/workshop.md](docs/workshop.md)** (MOAW form
 
 Part 2 loop: *Recall the exploit → Why it's dangerous → Add the Azure layer (design · secure code · Azure wiring) → Verify → Learn more.*
 
+### Preview the workshop locally
+
+The workshop is authored in [MOAW](https://github.com/microsoft/moaw) format. To render
+and live-preview it on your machine, install the MOAW CLI (Node.js required) and serve
+the file:
+
+```powershell
+# Windows (PowerShell)
+$env:Path = "C:\Program Files\nodejs;$env:APPDATA\npm;$env:Path"
+npm install -g @moaw/cli
+& "$env:APPDATA\npm\moaw.cmd" serve docs/workshop.md
+# Preview at http://localhost:4444/workshop/workshop.md (auto-reloads on save)
+```
+
+```bash
+# macOS / Linux
+npm install -g @moaw/cli
+moaw serve docs/workshop.md
+# Preview at http://localhost:4444/workshop/workshop.md (auto-reloads on save)
+```
+
 ## Repository layout
 
 ```
