@@ -1,0 +1,15 @@
+.git
+.venv
+venv
+env
+__pycache__
+.pytest_cache
+.ruff_cache
+.env
+.env.*
+src/data/*.sqlite
+src/infra/.terraform
+src/infra/*.tfstate*
+docs
+*.md
+!README.md

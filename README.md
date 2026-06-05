@@ -108,12 +108,25 @@ asserts each vulnerability is present when its toggle is off and mitigated when 
 
 ## Deploy to Azure
 
-Modules 1+ run against real Azure services. Provision with Terraform:
+Modules 1+ run against real Azure services. Participants who cannot run Python
+locally can also use a browser-hosted copy of the vulnerable app on Azure
+Container Apps.
+
+Build and push the app image to a registry you control:
+
+```powershell
+docker build -t <registry>/zava-lab:latest .
+docker push <registry>/zava-lab:latest
+```
+
+Provision the Azure services, optionally including the web app:
 
 ```powershell
 cd src/infra
 terraform init
-terraform apply
+terraform apply `
+  -var deploy_app=true `
+  -var app_container_image=<registry>/zava-lab:latest
 ```
 
 This stands up the Foundry project + model deployments, Azure AI Search, PostgreSQL
@@ -122,9 +135,11 @@ MCP Server** on Azure Container Apps (the agents' PostgreSQL tool), and monitori
 Copy the emitted outputs into `.env` (including `pg_mcp_server_url` ->
 `PG_MCP_SERVER_URL`, `ai_gateway_url` -> `AI_GATEWAY_URL`, and the PostgreSQL
 connection strings), set `OFFLINE_MODE=false`, then run `python -m src.scripts.seed`
-to seed PostgreSQL and AI Search. The same FastAPI app now calls Foundry models,
-Azure Database for PostgreSQL, the Microsoft Azure MCP Server when
-`USE_MCP_TOOLS=true`, and APIM when `ENABLE_AI_GATEWAY=true`. See
+to seed PostgreSQL and AI Search. The hosted app defaults to `app_offline_mode=true`,
+which gives a browser-accessible vulnerable baseline using container-local sample
+data. Set `-var app_offline_mode=false` when you want that hosted app to call
+Foundry models, Azure Database for PostgreSQL, the Microsoft Azure MCP Server
+when `USE_MCP_TOOLS=true`, and APIM when `ENABLE_AI_GATEWAY=true`. See
 [docs/workshop.md](docs/workshop.md) for region/quota prerequisites and the
 tenant-admin prep steps (Entra app registration, Purview) with fallbacks.
 
@@ -198,6 +213,7 @@ src/
   scripts/    seed / deploy helpers
 docs/
   workshop.md MOAW lab tutorial
+Dockerfile    Container image for Azure Container Apps / browser-only learners
 ```
 
 ## Contributing

@@ -377,17 +377,26 @@ Every test asserts **both** the vulnerable behavior (toggle off) **and** the sec
 
 Now harden the same app. Each module adds **one named Azure security layer** over the vulnerable baseline and you re-run a Part 1 exploit to confirm it's dead.
 
+If you are teaching a group where some participants cannot run the app locally, deploy the vulnerable web UI to Azure Container Apps first. Build and push the app image, then pass it to Terraform:
+
+```bash
+docker build -t <registry>/zava-lab:latest .
+docker push <registry>/zava-lab:latest
+```
+
 **Deploy the Azure backing services once, up front** (Modules 1–6 use them):
 
 ```bash
 cd src/infra
 terraform init
-terraform apply              # Foundry, AI Search, PostgreSQL, Key Vault, Storage, APIM, monitoring
+terraform apply \
+    -var deploy_app=true \
+    -var app_container_image=<registry>/zava-lab:latest
 cd ../..
 python -m src.scripts.seed   # seed Postgres + upload sample docs (incl. one poisoned doc)
 ```
 
-Copy the Terraform outputs into `.env`, set `OFFLINE_MODE=false`, and run the same FastAPI app. In Azure mode the app uses the Foundry project SDK for model calls, PostgreSQL Flexible Server for data tools, the Microsoft Azure MCP Server when `USE_MCP_TOOLS=true`, and APIM when `ENABLE_AI_GATEWAY=true` plus `AI_GATEWAY_URL` are set.
+Terraform emits `app_url` when `deploy_app=true`; share that URL with browser-only participants for Part 1. By default the hosted app uses `app_offline_mode=true`, so the vulnerable baseline works immediately with container-local sample data. For Part 2, set `app_offline_mode=false` and provide the PostgreSQL app-role password so the same hosted app uses the Foundry project SDK for model calls, PostgreSQL Flexible Server for data tools, the Microsoft Azure MCP Server when `USE_MCP_TOOLS=true`, and APIM when `ENABLE_AI_GATEWAY=true` plus `AI_GATEWAY_URL` are set.
 
 > Short on time or subscription rights? You can still do every module's *before/after* **offline** by flipping its `ENABLE_*` toggle — the Azure wiring sub-section then shows exactly how the same control is enforced on the platform.
 

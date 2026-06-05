@@ -147,3 +147,67 @@ variable "mcp_toolbox_image" {
   default     = "mcr.microsoft.com/azure-sdk/azure-mcp:latest"
   description = "Container image for the remote MCP server. Defaults to the Microsoft-published Azure MCP Server image."
 }
+
+# ---------------------------------------------------------------------------
+# Browser-accessible app deployment (for participants without local machines).
+# Build/push the Dockerfile to your registry, then pass the image here.
+# ---------------------------------------------------------------------------
+variable "deploy_app" {
+  type        = bool
+  default     = false
+  description = "Deploy the Zava FastAPI chat app to Azure Container Apps so participants can use the vulnerable app from a browser. Requires app_container_image."
+}
+
+variable "app_container_image" {
+  type        = string
+  default     = ""
+  description = "Container image for the Zava FastAPI app, e.g. <acr>.azurecr.io/zava-lab:latest. Required when deploy_app=true."
+
+  validation {
+    condition     = var.deploy_app == false || length(var.app_container_image) > 0
+    error_message = "app_container_image is required when deploy_app=true."
+  }
+}
+
+variable "app_offline_mode" {
+  type        = bool
+  default     = true
+  description = "true = browser-accessible vulnerable baseline with container-local SQLite/stub fallback. false = app calls Azure Foundry/PostgreSQL/MCP/APIM using the env below."
+}
+
+variable "pg_app_user" {
+  type        = string
+  default     = "zava_app_ro"
+  description = "Least-privilege PostgreSQL role username used by the hosted app in secure mode. The seed script creates/grants this role."
+}
+
+variable "pg_app_password" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Password for pg_app_user. Required only when app_offline_mode=false and the hosted app needs PG_APP_CONNECTION."
+
+  validation {
+    condition     = var.deploy_app == false || var.app_offline_mode == true || length(var.pg_app_password) > 0
+    error_message = "pg_app_password is required when deploy_app=true and app_offline_mode=false."
+  }
+}
+
+variable "app_registry_server" {
+  type        = string
+  default     = ""
+  description = "Optional private registry server for app_container_image, e.g. myacr.azurecr.io. Leave blank for public images."
+}
+
+variable "app_registry_username" {
+  type        = string
+  default     = ""
+  description = "Optional private registry username."
+}
+
+variable "app_registry_password" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Optional private registry password."
+}

@@ -13,6 +13,8 @@ locals {
   # Lowercased, suffixed base name used across resources.
   base = "${var.prefix}${random_string.suffix.result}"
 
+  deploy_container_apps = var.deploy_mcp_toolbox || var.deploy_app
+
   # Public network access mirrors the security posture: open in the vulnerable
   # baseline (V7), locked down in secure mode.
   public_network_access = var.secure_mode ? false : true

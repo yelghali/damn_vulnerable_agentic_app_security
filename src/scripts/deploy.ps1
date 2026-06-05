@@ -20,6 +20,15 @@
   Provision the APIM AI gateway (var.deploy_apim=true). Off by default because
   APIM provisioning is slow; turn it on for Module 6.
 
+.PARAMETER DeployApp
+  Deploy the FastAPI lab app to Azure Container Apps for browser-only learners.
+
+.PARAMETER AppImage
+  Container image to run when -DeployApp is used, e.g. myacr.azurecr.io/zava-lab:latest.
+
+.PARAMETER AppRegistryServer
+  Optional private registry server, e.g. myacr.azurecr.io. Leave blank for public images.
+
 .PARAMETER EnvFile
   Path to the .env file to update. Defaults to ./.env at the repo root.
 
@@ -31,6 +40,12 @@
 param(
     [switch]$SecureMode,
     [switch]$DeployApim,
+    [switch]$DeployApp,
+    [string]$AppImage,
+    [string]$AppRegistryServer,
+    [string]$AppRegistryUsername,
+    [string]$AppRegistryPassword,
+    [switch]$AppAzureMode,
     [string]$EnvFile
 )
 
@@ -43,7 +58,11 @@ if (-not $EnvFile) { $EnvFile = Join-Path $repoRoot ".env" }
 Write-Host "==> Repo root : $repoRoot"
 Write-Host "==> Infra dir : $infraDir"
 Write-Host "==> Env file  : $EnvFile"
-Write-Host "==> secure_mode=$([bool]$SecureMode) deploy_apim=$([bool]$DeployApim)"
+Write-Host "==> secure_mode=$([bool]$SecureMode) deploy_apim=$([bool]$DeployApim) deploy_app=$([bool]$DeployApp)"
+
+if ($DeployApp -and -not $AppImage) {
+  throw "-AppImage is required with -DeployApp. Build/push the Dockerfile first, then pass the image name."
+}
 
 # --- Terraform apply --------------------------------------------------------
 Push-Location $infraDir
@@ -51,7 +70,13 @@ try {
     terraform init -input=false
     terraform apply -input=false -auto-approve `
         -var ("secure_mode=" + $SecureMode.ToString().ToLower()) `
-        -var ("deploy_apim=" + $DeployApim.ToString().ToLower())
+        -var ("deploy_apim=" + $DeployApim.ToString().ToLower()) `
+        -var ("deploy_app=" + $DeployApp.ToString().ToLower()) `
+        -var ("app_offline_mode=" + (-not $AppAzureMode).ToString().ToLower()) `
+        -var ("app_container_image=" + $AppImage) `
+        -var ("app_registry_server=" + $AppRegistryServer) `
+        -var ("app_registry_username=" + $AppRegistryUsername) `
+        -var ("app_registry_password=" + $AppRegistryPassword)
 
     $tf = terraform output -json | ConvertFrom-Json
 }
@@ -83,6 +108,8 @@ $map = [ordered]@{
         $kv = Get-Out "key_vault_name"
         if ($kv) { "https://$kv.vault.azure.net/" } else { "" }
     )
+    "PG_MCP_SERVER_URL"             = Get-Out "pg_mcp_server_url"
+    "APP_URL"                       = Get-Out "app_url"
 }
 
 # --- Merge into .env (preserve existing keys, append/replace mapped ones) ----

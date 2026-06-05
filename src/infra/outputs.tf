@@ -69,6 +69,11 @@ output "pg_mcp_server_url" {
   value       = var.deploy_mcp_toolbox ? "https://${azurerm_container_app.mcp_toolbox[0].ingress[0].fqdn}/mcp" : ""
 }
 
+output "app_url" {
+  description = "Browser URL for the Zava vulnerable/secure app when deploy_app = true."
+  value       = var.deploy_app ? "https://${azurerm_container_app.zava_app[0].ingress[0].fqdn}" : ""
+}
+
 output "secure_mode" {
   description = "Infra security posture this state was applied with."
   value       = var.secure_mode
