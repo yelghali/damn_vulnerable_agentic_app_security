@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="520" viewBox="0 0 1180 520" role="img" aria-labelledby="title desc">
+  <title id="title">Zava guardrail placement flow</title>
+  <desc id="desc">A request flows from the user through Entra identity, APIM, app guards, Foundry endpoint guardrails, agent guardrails, and scoped tools and data services.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .lane { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; rx: 10; }
+      .edge { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; rx: 8; }
+      .app { fill: #ecfdf5; stroke: #059669; stroke-width: 2; rx: 8; }
+      .foundry { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2; rx: 8; }
+      .data { fill: #fff7ed; stroke: #ea580c; stroke-width: 2; rx: 8; }
+      .govern { fill: #fef2f2; stroke: #dc2626; stroke-width: 2; rx: 8; }
+      .title { font: 700 20px Segoe UI, Arial, sans-serif; fill: #0f172a; }
+      .label { font: 600 15px Segoe UI, Arial, sans-serif; fill: #0f172a; }
+      .small { font: 13px Segoe UI, Arial, sans-serif; fill: #334155; }
+      .tiny { font: 12px Segoe UI, Arial, sans-serif; fill: #475569; }
+      .arrow { stroke: #334155; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #64748b; stroke-width: 2; fill: none; stroke-dasharray: 7 6; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155" />
+    </marker>
+  </defs>
+  <rect class="bg" width="1180" height="520" />
+  <text x="40" y="42" class="title">Where each guard happens in the request flow</text>
+  <text x="40" y="68" class="small">The platform guardrails are unavoidable at the Foundry endpoint; app/API guards cover boundaries the endpoint cannot see, such as individual RAG chunks, MCP output, logs, and agent handoffs.</text>
+
+  <rect x="30" y="96" width="1120" height="350" class="lane" />
+
+  <rect x="60" y="160" width="120" height="76" class="edge" />
+  <text x="120" y="187" text-anchor="middle" class="label">User</text>
+  <text x="120" y="209" text-anchor="middle" class="small">browser / API</text>
+
+  <rect x="225" y="135" width="150" height="126" class="edge" />
+  <text x="300" y="162" text-anchor="middle" class="label">Entra ID</text>
+  <text x="300" y="185" text-anchor="middle" class="small">validated identity</text>
+  <text x="300" y="205" text-anchor="middle" class="small">OBO token</text>
+  <text x="300" y="226" text-anchor="middle" class="tiny">Module 5</text>
+
+  <rect x="420" y="124" width="175" height="148" class="edge" />
+  <text x="507" y="151" text-anchor="middle" class="label">APIM AI Gateway</text>
+  <text x="507" y="175" text-anchor="middle" class="small">auth, key custody</text>
+  <text x="507" y="195" text-anchor="middle" class="small">token limits, logs</text>
+  <text x="507" y="216" text-anchor="middle" class="tiny">Module 6</text>
+
+  <rect x="640" y="112" width="190" height="172" class="app" />
+  <text x="735" y="139" text-anchor="middle" class="label">FastAPI + agents</text>
+  <text x="735" y="162" text-anchor="middle" class="small">secure system prompt</text>
+  <text x="735" y="182" text-anchor="middle" class="small">PII/log redaction</text>
+  <text x="735" y="202" text-anchor="middle" class="small">RAG chunk shield</text>
+  <text x="735" y="222" text-anchor="middle" class="small">A2A + tool output guard</text>
+  <text x="735" y="244" text-anchor="middle" class="tiny">Modules 1, 2, 3, 4</text>
+
+  <rect x="875" y="102" width="220" height="192" class="foundry" />
+  <text x="985" y="130" text-anchor="middle" class="label">Azure AI Foundry</text>
+  <text x="985" y="154" text-anchor="middle" class="small">model deployment RAI policy</text>
+  <text x="985" y="174" text-anchor="middle" class="small">Content Safety filters</text>
+  <text x="985" y="194" text-anchor="middle" class="small">Prompt Shields</text>
+  <text x="985" y="214" text-anchor="middle" class="small">Protected material</text>
+  <text x="985" y="234" text-anchor="middle" class="small">agent guardrail / groundedness</text>
+  <text x="985" y="258" text-anchor="middle" class="tiny">Modules 1, 2, 9</text>
+
+  <rect x="640" y="335" width="205" height="76" class="data" />
+  <text x="742" y="362" text-anchor="middle" class="label">Scoped tools</text>
+  <text x="742" y="384" text-anchor="middle" class="small">Postgres RLS, MCP allow-list</text>
+  <text x="742" y="404" text-anchor="middle" class="tiny">Modules 4, 5</text>
+
+  <rect x="890" y="335" width="205" height="76" class="data" />
+  <text x="992" y="362" text-anchor="middle" class="label">Governed data</text>
+  <text x="992" y="384" text-anchor="middle" class="small">AI Search ACLs, Purview DLP</text>
+  <text x="992" y="404" text-anchor="middle" class="tiny">Modules 5, 8</text>
+
+  <rect x="225" y="335" width="310" height="76" class="govern" />
+  <text x="380" y="362" text-anchor="middle" class="label">Agent governance gate</text>
+  <text x="380" y="384" text-anchor="middle" class="small">policy.yaml + posture check before enterprise Purview</text>
+  <text x="380" y="404" text-anchor="middle" class="tiny">Module 7</text>
+
+  <path class="arrow" d="M180 198 H225" />
+  <path class="arrow" d="M375 198 H420" />
+  <path class="arrow" d="M595 198 H640" />
+  <path class="arrow" d="M830 198 H875" />
+  <path class="arrow" d="M985 294 C985 320 980 324 992 335" />
+  <path class="arrow" d="M735 284 C735 313 742 318 742 335" />
+  <path class="dash" d="M640 373 H535" />
+  <path class="dash" d="M890 373 H845" />
+
+  <text x="40" y="485" class="small">Read it as: identity is established first, platform controls enforce model safety at Foundry, app/API guards protect local boundaries, and governance/Purview provide posture and enterprise data controls.</text>
+</svg>

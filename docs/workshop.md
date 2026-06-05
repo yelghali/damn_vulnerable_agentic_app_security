@@ -22,11 +22,11 @@ sections_title:
   - "Module 4 — Secure MCP through Foundry: tool least-privilege, HITL & secure code"
   - "Module 5 — Entra ID identity & AI Search document security"
   - "Module 6 — APIM AI gateway, observability, rate limiting & Defender"
-  - "Module 7 — Microsoft Purview: DLP & data governance"
+  - "Module 7 — Agent governance toolkit"
   - "Module 8 — Data poisoning deep-dive & groundedness"
   - "Module 9 — Evaluations"
-  - "Module 10 — AI red teaming (automated)"
-  - "Module 11 — Agent governance toolkit"
+    - "Module 10 — Microsoft Purview: DLP & data governance"
+    - "Module 11 — AI red teaming (automated)"
   - "Capstone — Red-team challenge (manual)"
   - "Reference — vulnerability ↔ standards map"
 ---
@@ -51,7 +51,7 @@ The lab is one coherent story told in **two parts**:
 > Spin the app up on your laptop (no Azure, no cost) and **exploit or observe every weakness**. Most attacks run through the chat UI; a few infrastructure and MCP items are inspected through code/tests because they are not meaningful UI clicks. By the end you've felt all eleven vulnerabilities (V1–V11) first-hand.
 >
 > ### Part 2 · Add the Azure security layers — *harden it, one Azure control at a time*
-> Now layer Microsoft's security stack over the same app: **Entra ID** identity, **AI Search** document-level security, **model + agent guardrails on Foundry**, **secure MCP through Foundry**, **observability + rate limiting with the APIM AI gateway**, **DLP with Purview**, and **Defender** to detect attacks and insecure code. Each layer closes one of the vulnerabilities you exploited in Part 1.
+> Now layer Microsoft's security stack over the same app: **Entra ID** identity, **AI Search** document-level security, **model + agent guardrails on Foundry**, **secure MCP through Foundry**, **observability + rate limiting with the APIM AI gateway**, **agent governance**, **DLP with Purview**, and **Defender** to detect attacks and insecure code. Each layer closes one of the vulnerabilities you exploited in Part 1.
 
 Each Part-2 module follows the same loop:
 
@@ -69,7 +69,7 @@ The **Add the Azure layer** step is the heart of every module. You don't just fl
 
 > - **Part 1 (Understand the vulnerabilities)** runs **100% locally** — seeded SQLite + a real local SLM. No Azure account needed.
 > - **Part 2 · Core (Modules 1–6)** deploys into **your own Azure subscription** with **no tenant-admin rights**.
-> - **Part 2 · Extended (Modules 7–11 + capstone)** adds tenant-scoped governance (Purview), assurance (evaluations, AI red teaming), and agent governance.
+> - **Part 2 · Extended (Modules 7–11 + capstone)** first adds app-level agent governance, then groundedness and evaluations, then tenant-scoped enterprise governance with Purview, and finally automated AI red teaming over the governed app.
 >
 > Each module is independently runnable; you can stop and resume between modules.
 
@@ -172,6 +172,28 @@ Open [assets/diagrams/architecture.drawio](assets/diagrams/architecture.drawio) 
 
 </div>
 
+### Control placement: where the guard actually happens
+
+The same word, "guardrail," appears in three places in this lab. This mini-flow shows the enforcement point for each one so you know whether you are changing a **system prompt**, an **app/API guard**, a **Foundry endpoint policy**, or an **identity-scoped data/tool boundary**.
+
+![A compact request-flow diagram showing Entra identity at the edge, APIM gateway controls, in-app system prompt and boundary guards, Foundry model deployment RAI policy and agent guardrails, and scoped tools/data services.](assets/diagrams/guardrail-flow.svg)
+
+| Guard location | Example control | Added by | Actually implemented where |
+|---|---|---|---|
+| **System prompt** | Finance-only scope, no prompt/config leakage | Module 1 / 3 | [src/agents/prompts/secure/orchestrator.md](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/prompts/secure/orchestrator.md) |
+| **Foundry model deployment** | Content filters, Prompt Shields, Protected Material | Modules 1 / 2 | [src/infra/foundry.tf](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/infra/foundry.tf) RAI policy attached to `gpt-governed` |
+| **Foundry agent guardrail** | Per-agent stricter guardrail / groundedness | Modules 1 / 8 | Azure portal or Foundry SDK; default inheritance is shown in the portal |
+| **App/API guard** | PII redaction, per-document Prompt Shields call, tool/MCP output re-scan, agent-to-agent handoff scan | Modules 2 / 3 / 4 / 8 | [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py), [src/agents/knowledge/agent.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/knowledge/agent.py) |
+| **Identity-scoped tools/data** | Entra OBO, Postgres RLS, AI Search ACL trimming, MCP allow-list | Modules 4 / 5 | [src/agents/tools/db.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/db.py), [src/agents/tools/search.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/search.py), [src/agents/tools/mcp.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/mcp.py) |
+
+<div class="important" data-title="Are guardrails and Prompt Shields actually added through code?">
+
+> **Yes, but at two different layers.** The production-grade, unavoidable control is added through **infrastructure code**: [src/infra/foundry.tf](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/infra/foundry.tf) creates a `governed` RAI policy with harmful-content filters, `Jailbreak`, `Indirect Attack`, and Protected Material, then attaches it to the Foundry model deployment. The app also has **runtime code** in [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py): when a security toggle is enabled it must call the real Azure AI Content Safety `text:analyze`, `text:shieldPrompt`, Groundedness, or Azure AI Language PII API. Missing Azure configuration fails closed with a setup error; secure checks do not fall back to local regex or keyword heuristics.
+>
+> The portal path is an **alternative way to apply or inspect the same platform controls**, not a separate hidden requirement. Use it when teaching or validating: Foundry project → **Guardrails + controls** → **Content filters** → create/inspect the filter, then **Models + endpoints** → `gpt-governed` → confirm the filter is attached. For agent-specific controls, open an agent's **Build** page → **Guardrail (Preview)** → **Manage guardrail**.
+
+</div>
+
 ## What you'll learn
 
 **In Part 1** — how each vulnerability is actually exploited or observed, hands-on, through the chat UI, code, config, or tests.
@@ -185,7 +207,8 @@ Open [assets/diagrams/architecture.drawio](assets/diagrams/architecture.drawio) 
 | **Tool least-privilege + secure MCP through Foundry + HITL + sandboxed code + inter-agent guard** | V4 overpermissioned tools, V8 unsafe code, V9 insecure MCP, V11 agent-to-agent poisoning | 4 |
 | **Entra ID** (OBO/RBAC/Key Vault) + **AI Search document-level security** | V5 broken identity | 5 |
 | **APIM AI gateway** (observability, token rate limiting, key vaulting) + **Defender for Cloud** (attack & insecure-code detection) | V7 insecure infrastructure, V10 no AI gateway | 6 |
-| **Microsoft Purview** DSPM + **DLP for AI** | V3 PII leakage, V6 data poisoning | 7 |
+| **Agent governance toolkit** (inventory, policy, posture gate) | V1–V11 governed as an app-level agent system | 7 |
+| **Microsoft Purview** DSPM + **DLP for AI** | V3 PII leakage, V6 data poisoning at tenant scale | 11 |
 
 Then prove it holds with **evaluations** and **AI red teaming**.
 
@@ -198,7 +221,7 @@ Then prove it holds with **evaluations** and **AI red teaming**.
 | Azure CLI | **Part 2** | `az login` and a default subscription set. |
 | Terraform ≥ 1.7 | **Part 2** | Used to deploy all infrastructure. |
 | Model quota | **Part 2** | A small chat model (e.g. `gpt-4.1-mini`) in a known-good region. |
-| Tenant admin | **Part 2 · Extended** | Only for Modules 5 & 7 (Entra app reg, Purview). Fallbacks provided. |
+| Tenant admin | **Part 2 · Extended** | Only for Modules 5 & 10 (Entra app reg, Purview). Fallbacks provided. |
 
 <div class="tip" data-title="Part 1 needs zero Azure">
 
@@ -223,11 +246,12 @@ Each Part-2 module touches a single, obvious lever. This map lists the **toggle-
 | 4 — Tools/MCP/HITL/code | Secure MCP + least-priv | `TOOL_LEAST_PRIV`, `HITL`, `MCP_TOOL_SECURITY`, `CODE_SANDBOX` | [src/agents/tools/db.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/db.py), [src/agents/tools/mcp.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/mcp.py), [src/agents/tools/report.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/report.py), [src/agents/transactions/](https://github.com/yelghali/damn_vulnerable_agentic_app_security/tree/main/src/agents/transactions) |
 | 5 — Identity | Entra ID + AI Search ACL | `OBO`, `DOC_SECURITY` | [src/app/main.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/app/main.py), [src/agents/tools/search.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/search.py) |
 | 6 — Runtime/gateway | APIM gateway + Defender | `SECURE_RUNTIME`, `AI_GATEWAY` | [src/agents/gateway/gateway.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/gateway/gateway.py), [src/infra/](https://github.com/yelghali/damn_vulnerable_agentic_app_security/tree/main/src/infra) |
+| 7 — Agent governance | AGT policy + posture gate | script-backed | [src/agents/governance/policy.yaml](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/governance/policy.yaml), [src/scripts/governance_check.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/scripts/governance_check.py) |
 | 8 — Groundedness | Foundry guardrails | `GROUNDEDNESS` | [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py) |
 
 > **Toggle acronyms in that table:** `TOOL_LEAST_PRIV` = tool least-privilege (each tool gets *only* the permissions it needs) · `HITL` = human-in-the-loop approval on risky actions · `MCP_TOOL_SECURITY` = scope/allow-list remote Model Context Protocol tools · `CODE_SANDBOX` = run model-written code in an isolated sandbox · `OBO` = Entra ID On-Behalf-Of token flow · `DOC_SECURITY` = AI Search document-level access control · `SECURE_RUNTIME` = private endpoints + safe error handling. (Full glossary is in the *Acronym decoder* box near the top.)
 >
-> **Why does the table jump 6 → 8?** Only toggle-gated modules appear here. **Module 7** (Purview) is configured in the Azure portal, and **Modules 9–11** are run as scripts, not switches — their files are [src/evals/run.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/evals/run.py) (Module 9 · Evaluations), [src/redteam/run.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/redteam/run.py) (Module 10 · AI red teaming), and [src/scripts/governance_check.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/scripts/governance_check.py) (Module 11 · Agent governance).
+> **Why are some rows marked script-backed or portal-backed?** Only a few modules are simple `ENABLE_*` switches. **Module 7** is an executable governance posture gate (`python -m src.scripts.governance_check`), **Module 9** runs evaluation scripts ([src/evals/run.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/evals/run.py)), **Module 10** is Purview configuration in the Azure / Microsoft Purview portals, and **Module 11** runs automated AI red teaming ([src/redteam/run.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/redteam/run.py)).
 
 The master switch is `SECURE_MODE`. Any individual toggle left unset inherits `SECURE_MODE`, so:
 
@@ -408,8 +432,10 @@ Terraform emits `app_url` when `deploy_app=true`; share that URL with browser-on
 | 4 | **Secure MCP through Foundry** + tool least-privilege + HITL + sandboxed code + inter-agent guard | V4 overpermissioned tools, V8 unsafe code, V9 insecure MCP, V11 agent-to-agent poisoning |
 | 5 | **Entra ID** (OBO/RBAC/Key Vault) + **AI Search** document-level security | V5 broken identity |
 | 6 | **APIM AI gateway** (observability, rate limiting) + **Defender for Cloud** | V7 insecure infrastructure, V10 no AI gateway |
-| 7 | **Microsoft Purview** DSPM + **DLP for AI** | V3 PII leakage, V6 data poisoning |
+| 7 | **Agent governance toolkit** policy + posture gate | V1–V11 governed as an agent system |
 | 8 | **Foundry** Groundedness detection + trusted ingestion | V6 data poisoning |
+| 10 | **Microsoft Purview** DSPM + **DLP for AI** | V3 PII leakage, V6 data poisoning at tenant scale |
+| 11 | **AI red teaming** (automated) | assurance across V1–V11 |
 
 ---
 
@@ -469,35 +495,21 @@ There are three layers to this control. The **canonical** one lives on **Foundry
 
 #### (a) The secure design & code
 
-> **Is this mocked? No.** [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py) is **dual-path** and decides at call time: when `CONTENT_SAFETY_ENDPOINT` + key are set it calls the **genuine** Azure AI Content Safety `text:analyze` (and `text:shieldPrompt` for V2, Azure AI Language `recognize_pii_entities` for V3) over the real REST/SDK surface. The keyword/severity heuristic below runs **only** when no Azure endpoint is configured — so Part 1 can demo the before/after on a laptop with **zero Azure**, exactly as the lab requires. It is a *fallback demonstrator*, not a stub of a test.
+> **Is this mocked? No.** [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py) calls the **genuine** Azure AI Content Safety `text:analyze` service when `ENABLE_CONTENT_SAFETY=true`. Unit tests use fake Azure responses so CI stays offline, but the app's secure path requires `CONTENT_SAFETY_ENDPOINT` + key and fails closed if the service is missing or errors. There is no local keyword fallback for secure checks.
 
-The heuristic path shows the *shape* of the decision a content filter makes — classify the text against the four harm categories (each with its own severity threshold) plus an org-specific off-topic custom category, and refuse on a hit:
+The request is sent to Azure, then the app applies your per-category thresholds to Azure's returned severities:
 
 ```python
 def check_content_safety(text: str) -> None:
     if not get_settings().enable_content_safety:
         return  # LAB-VULN(V1/V2): no content filtering
     creds = _content_safety_creds()
-    if creds is not None:
-        _azure_check_content_safety(text, creds)   # <-- REAL Azure AI Content Safety text:analyze
-    else:
-        _heuristic_content_safety(text)            # <-- offline fallback only (no endpoint set)
-    # ... custom off-topic category applied on top ...
+    if creds is None:
+        raise SecurityConfigurationError("Content Safety is enabled but Azure config is missing.")
+    _azure_check_content_safety(text, creds)  # REAL Azure AI Content Safety text:analyze
 ```
 
-The offline classifier itself, for reference:
-
-```python
-def _heuristic_content_safety(text: str) -> None:
-    low = text.lower()
-    settings = get_settings()
-    for category, terms in _CATEGORY_TERMS.items():        # sexual / hate / violence / self-harm
-        threshold = settings.category_threshold(category)  # each its OWN slider, like the portal
-        if any(sev >= threshold and term in low for term, sev in terms.items()):
-            raise SafetyViolation(f"Blocked harmful content ({category}).", category)
-```
-
-When Azure is configured, that heuristic is **not used** — the real **Azure AI Content Safety** classifier scores `Hate/Sexual/Violence/SelfHarm` 0–7 (**each category configured independently**) and a **custom category / blocklist** handles the off-topic terms. The same call is made *twice* — on the user input **and** on the model output — which is why the orchestrator re-checks the response before returning it.
+The real **Azure AI Content Safety** classifier scores `Hate/Sexual/Violence/SelfHarm` 0–7 (**each category configured independently**) and a **custom category / blocklist** handles the off-topic terms. The same call is made *twice* — on the user input **and** on the model output — which is why the orchestrator re-checks the response before returning it.
 
 The second layer is the **system prompt**. Compare `prompts/vulnerable/orchestrator.md` (a bare "you are a helpful assistant") with `prompts/secure/orchestrator.md`, which scopes the agent to Zava finance topics and refuses configuration/identity-leak requests. A hardened prompt is *defense in depth*, not the primary control — it's bypassable by injection (that's Module 2), so it never stands alone.
 
@@ -514,7 +526,7 @@ resource "azurerm_cognitive_deployment" "governed" {
 }
 ```
 
-You set the strictness once in IaC (`content_filter_severity_threshold = "Low"`); the platform then filters every request **and** response. The app simply points at the **governed** deployment — `active_model_deployment` in [src/config.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/config.py) selects it when `enable_content_safety` is on. No filtering logic *needs* to ship in the app; the platform owns it. The in-app `check_content_safety` is the API-layer backstop — it calls the **real** Content Safety service when an endpoint is configured, and falls back to the offline heuristic only when there isn't one.
+You set the strictness once in IaC (`content_filter_severity_threshold = "Low"`); the platform then filters every request **and** response. The app simply points at the **governed** deployment — `active_model_deployment` in [src/config.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/config.py) selects it when `enable_content_safety` is on. No filtering logic *needs* to ship in the app; the platform owns it. The in-app `check_content_safety` is the API-layer backstop — it also calls the **real** Content Safety service and fails closed if it is unavailable.
 
 > Org-specific "no politics / no jokes" rules that aren't a harm category go in a **custom blocklist** you attach to the same Content Safety resource and reference from the policy — that's the part you own and tune per tenant.
 
@@ -658,13 +670,9 @@ The defining insight: **retrieved documents and tool output are untrusted input*
 def shield_prompt(text: str, source: str = "user") -> None:
     if not get_settings().enable_prompt_shields:
         return  # LAB-VULN(V2): prompt shields disabled
-    low = text.lower()
-    for pat in _INJECTION_PATTERNS:                       # "ignore previous instructions", "DAN", ...
-        if re.search(pat, low):
-            raise SafetyViolation(
-                f"Prompt-injection attempt detected in {source} content.",
-                "jailbreak" if source == "user" else "indirect_injection",
-            )
+    if _content_safety_creds() is None:
+        raise SecurityConfigurationError("Prompt Shields are enabled but Azure config is missing.")
+    _azure_shield_prompt(text, source)  # Azure AI Content Safety text:shieldPrompt
 ```
 
 The knowledge agent calls `shield_prompt(chunk, source="document")` on **every retrieved chunk** before it reaches the model — so the poisoned doc is blocked at the trust boundary, not after the model has already obeyed it. This is also why tool/MCP output gets re-scanned in Module 4: same principle, different untrusted source.
@@ -770,7 +778,7 @@ pytest src/tests/test_vulnerabilities.py::test_v3_pii_redacted_when_enabled -q
 
 ### Remediate
 
-This is the **first in-app guard layer** — and an important lesson about *where* a control has to live. Foundry filters can *block* harmful content, but they won't silently **redact** PII out of your prompts and logs for you; that transformation has to happen in your pipeline (or at the API layer / Purview, Module 7).
+This is the **first in-app guard layer** — and an important lesson about *where* a control has to live. Foundry filters can *block* harmful content, but they won't silently **redact** PII out of your prompts and logs for you; that transformation has to happen in your pipeline (or at the API layer / Purview, Module 10).
 
 #### (a) The secure design & code
 
@@ -780,12 +788,10 @@ This is the **first in-app guard layer** — and an important lesson about *wher
 def redact_pii(text: str) -> PiiResult:
     if not get_settings().enable_pii_redaction:
         return PiiResult(text=text)  # LAB-VULN(V3): PII flows unredacted
-    redacted, found = text, []
-    for label, pattern in _PII_PATTERNS.items():         # SSN, credit card, email, phone, ACC-…
-        for match in pattern.finditer(text):
-            found.append({"category": label, "text": match.group()})
-        redacted = pattern.sub(f"[{label}]", redacted)
-    return PiiResult(text=redacted, entities=found)
+    creds = _language_creds()
+    if creds is None:
+        raise SecurityConfigurationError("PII redaction is enabled but Azure config is missing.")
+    return _azure_redact_pii(text, creds)  # Azure AI Language recognize_pii_entities
 ```
 
 The orchestrator calls this at **three** choke points — it's not enough to redact once:
@@ -796,7 +802,7 @@ The orchestrator calls this at **three** choke points — it's not enough to red
 
 #### (b) The Azure wiring
 
-Replace the regexes with **Azure AI Language – PII detection**, which recognizes 100+ entity types with confidence scores and locale awareness:
+The secure path uses **Azure AI Language – PII detection**, which recognizes 100+ entity types with confidence scores and locale awareness:
 
 ```python
 from azure.ai.textanalytics import TextAnalyticsClient
@@ -1006,7 +1012,7 @@ def guard_agent_message(text, from_agent, to_agent):
 
 The orchestrator calls this in `_deliver_handoff` *before* invoking the target agent, so a forged "transfer" directive is refused at the agent boundary — the same "all non-local input is untrusted" principle, applied to messages agents send each other.
 
-**Azure wiring:** treat inter-agent handoffs as untrusted channels — sign/verify agent identities (Entra workload identities), keep money-moving capability behind the HITL gate (§2) so even a delivered handoff still needs human approval, and log every handoff for audit (Module 10).
+**Azure wiring:** treat inter-agent handoffs as untrusted channels — sign/verify agent identities (Entra workload identities), keep money-moving capability behind the HITL gate (§2) so even a delivered handoff still needs human approval, and log every handoff for audit in the APIM/Monitor layer from Module 6.
 
 #### Design notes
 
@@ -1088,15 +1094,13 @@ The root cause is **trusting client-supplied identity**. The fix is to derive id
 
 #### (a) The secure design & code — document-level trimming
 
-Even before Entra, the testable core is **trimming RAG results by the caller's groups**. `search_documents` in [src/agents/tools/search.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/search.py) returns a chunk only if the caller's Entra groups intersect the doc's `group_ids`:
+The testable core is **trimming RAG results by the caller's groups in Azure AI Search**. When `ENABLE_DOC_SECURITY=true`, [src/agents/tools/search.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/search.py) requires `SEARCH_ENDPOINT` and sends the caller's validated Entra group IDs to the Search filter. If Search is missing or errors, it fails closed instead of reading the local markdown corpus:
 
 ```python
-if settings.enable_doc_security:
-    # Mirrors AI Search:  group_ids/any(g: search.in(g, '<caller groups>'))
-    groups = set(caller_groups or [])
-    results = [d for d in results
-               if not d["group_ids"] or groups.intersection(d["group_ids"])]
-# LAB-VULN(V5): otherwise every chunk is returned to every caller.
+if settings.enable_doc_security and not settings.search_endpoint:
+    raise SearchConfigurationError("Document security is enabled but SEARCH_ENDPOINT is not configured.")
+
+search_filter = "not group_ids/any() or group_ids/any(g: search.in(g, '<caller-group-guids>', ','))"
 ```
 
 The critical detail: `caller_groups` must come from a **validated token**, never the request body. Trimming on spoofable groups is theater.
@@ -1120,18 +1124,29 @@ POST /indexes/zava-docs/docs/search?api-version=2024-07-01
   "filter": "group_ids/any(g: search.in(g, '<caller-group-guids>', ','))" }
 ```
 
-**3. Secrets and service identity.** Move every secret to **Key Vault** (referenced via managed identity), use **managed identities** for service-to-service calls, and replace Owner/Contributor with **least-privilege RBAC** (e.g. `Search Index Data Reader`, not `Search Service Contributor`).
+**3. Simplest tenant demo setup.** Create two Entra users and two groups, then map the sample docs and Postgres rows to those identities:
+
+| Demo principal | Entra group | What they should see |
+|---|---|---|
+| `alex@...` / `CUST-1001` | `retail-customers` | public/retail docs + Alex rows |
+| `priya@...` / `CUST-1002` | `private-client` | private-client docs + Priya rows |
+
+Put the group object IDs in each AI Search document's `group_ids` field. Grant the app or managed identity only `Search Index Data Reader` on the Search service. For PostgreSQL/MCP, connect with a scoped read-only role and enforce RLS from the validated `customer_id` claim (`app.customer_id`) so the database refuses cross-customer reads even if a tool call is malformed.
+
+**4. Show the before/after clearly.** In vulnerable mode, call the API as Alex but send `customer_id="CUST-1002"` or `groups=["private-client"]` in the request body; the app trusts the body and the restricted data appears. In secure mode (`ENABLE_OBO=true`, `ENABLE_DOC_SECURITY=true`, `ENABLE_TOOL_LEAST_PRIV=true`, `ENABLE_MCP_TOOL_SECURITY=true`), the app ignores body-supplied identity, derives `customer_id`/groups from the Entra token, filters AI Search server-side, and scopes MCP/Postgres reads to the validated caller.
+
+**5. Secrets and service identity.** Move every secret to **Key Vault** (referenced via managed identity), use **managed identities** for service-to-service calls, and replace Owner/Contributor with **least-privilege RBAC** (e.g. `Search Index Data Reader`, not `Search Service Contributor`).
 
 #### (c) Design notes
 
-- **Identity flows end-to-end.** OBO is what makes Postgres RLS (Module 4) and Search trimming actually *mean* something — the same validated principal reaches every layer.
+- **Identity flows end-to-end.** OBO is what makes Postgres RLS (Module 4), MCP Postgres calls, and Search trimming actually *mean* something — the same validated principal reaches every layer.
 - **Trim server-side.** Filter inside AI Search with `search.in()`; never fetch-all-then-filter in the app (you'd still pay to retrieve restricted docs and could leak them on error).
 - **Least privilege for services too.** A managed identity with reader-only data-plane roles limits blast radius if the app is compromised.
 
 #### See the before/after
 
 - **Entra OBO** — `ENABLE_OBO=true` swaps body-supplied identity for token-derived claims.
-- **Document trimming** — `ENABLE_DOC_SECURITY=true` (fully testable offline).
+- **Document trimming** — `ENABLE_DOC_SECURITY=true` requires Azure AI Search so ACL trimming runs server-side.
 
 ```bash
 # .env
@@ -1141,7 +1156,7 @@ ENABLE_DOC_SECURITY=true
 
 <div class="important" data-title="No tenant admin?">
 
-> Use a pre-created app registration, or run this module as a **read-only walkthrough**. Document-level trimming (`ENABLE_DOC_SECURITY`) is fully testable offline regardless.
+> Use a pre-created app registration, or run this module as a **read-only walkthrough** with the provided fake Azure responses in tests. The secure app path still requires Azure AI Search for document security.
 
 </div>
 
@@ -1275,33 +1290,95 @@ Authenticated calls route via the gateway with the key hidden; unauthenticated o
 
 <style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
 
-## Module 7 — Microsoft Purview: DLP & data governance
+## Module 7 — Agent governance toolkit
 
-> ⏱️ Extended · **Azure layer: Microsoft Purview** · Fixes **V3 + V6** · Tenant admin + licensing
+> ⏱️ Extended · Governance · Code-deployable (offline fallback included)
 >
-> **What this module fixes:** governs the same **PII (V3)** and **data-poisoning (V6)** risks at tenant scale — discovering, labelling, and applying DLP to sensitive data across the org, beyond the per-app guards of Modules 3 and 8.
+> **What this module adds:** every prior module flipped *one* control. This module steps back and asks **"is the whole agent system governed?"** — you build an **agent inventory**, write a machine-readable **policy**, and run a **posture check** as a CI gate that maps every gap to an OWASP Agentic threat (`Tn`). This app-level governance check comes before Purview because it governs the code, agents, tools, and prompts you just hardened; Purview later governs enterprise data and tenant-wide DLP.
 
-### Scenario
+Apply Microsoft's [agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit) (AGT) — which targets the **OWASP Agentic Top 10** and ships native middleware for the Microsoft Agent Framework — to Zava's five agents and their tools.
 
-Even with PII redaction, the org needs **discovery, classification, labeling, and DLP** across AI interactions.
+### 1 · The policy (the answer key, made machine-readable)
 
-### Remediate
+The intended posture lives in [src/agents/governance/policy.yaml](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/governance/policy.yaml) in AGT's schema. It encodes the same rules you enforced by hand across Modules 1–6 and Module 8 — irreversible tools need human approval, reads are scoped, code is sandboxed, MCP is allow-listed, PII is redacted at every boundary, destructive/admin tools are denied, and handoffs are re-scanned:
 
-- Enable **DSPM for AI** to discover and risk-score AI usage.
-- Apply **sensitivity labels** to the financial documents in Blob/AI Search.
-- Configure **DLP for AI** to block sensitive content in prompts/responses.
-- Register the Foundry app as an **Entra-registered AI app** so Purview can see it.
+```yaml
+default_action: deny
+rules:
+    - name: require-approval-on-money-movement      # V4 / Agentic T10
+        condition: tool in ["transfer_funds", "send_statement_email"]
+        action: require_approval
+        approvers: ["account-owner"]
+    - name: deny-unsandboxed-code                    # V8 / Agentic T11
+        condition: tool == "generate_report" and capability == "arbitrary_code"
+        action: deny
+    - name: redact-sensitive-data-at-boundaries      # V3 / Agentic T15
+        condition: channel in ["prompt", "tool_output", "response", "log"]
+        action: redact
+        require: [azure_ai_language_pii]
+    - name: deny-destructive-admin-tools             # deny tools no Zava agent needs
+        condition: tool in ["delete_customer", "delete_account", "drop_table"]
+        action: deny
+```
 
-<div class="important" data-title="Fallback (no Purview / tenant admin)">
+### 2 · Run the posture check (two security checks, offline)
 
-> Demonstrate the same control end-to-end with the in-app **Azure AI Language PII + classification + audit logging** from Module 3. The Purview steps are then a guided click-through with screenshots.
+Run the governance gate. In the **vulnerable baseline it FAILs** — seven critical controls are off — and the report names each gap with its `Tn` threat and `Vn`:
+
+```bash
+python -m src.scripts.governance_check          # exits non-zero -> CI gate fails
+# ...
+# Human-in-the-loop on money movement     FAIL  T10   V4  <- critical
+# Sandboxed code execution                FAIL  T11   V8  <- critical
+# Agent-to-agent message guard            FAIL  T12   V11 <- critical
+# Posture: 0/13 controls enabled · 7 critical gap(s).   RESULT: FAIL
+```
+
+Now flip the answer key and re-run — every control passes and the gate goes green:
+
+```bash
+SECURE_MODE=true python -m src.scripts.governance_check   # RESULT: PASS — exits 0
+```
+
+That's **check #1: a governance posture gate** you can wire into CI so a regression that disables HITL or the sandbox fails the build.
+
+**Check #2 — govern a tool at runtime.** With the real toolkit installed (`pip install agent-governance-toolkit`), wrap the highest-risk tool so the policy is enforced on every call, independently of the agent's reasoning:
+
+```python
+from agentmesh.governance import govern
+from src.agents.tools.db import transfer_funds
+
+# policy says transfer_funds -> require_approval; an unapproved call is denied.
+safe_transfer = govern(transfer_funds, policy="src/agents/governance/policy.yaml")
+```
+
+In production AGT runs as Agent Framework middleware, so this gate sits in front of *every* tool the agent calls — a defense-in-depth backstop behind the in-app `_authorize` and HITL checks from Module 4.
+
+### 3 · The full toolkit gate (Azure / CI)
+
+With AGT installed, the canonical commands map onto the same policy and prompts:
+
+```bash
+agt verify --policy src/agents/governance/policy.yaml --strict   # OWASP Agentic Top 10 gate
+agt red-team scan src/agents/prompts/ --min-grade B              # PromptDefense: 12-vector injection audit
+agt lint-policy src/agents/governance/                          # validate the policy file
+```
+
+`agt red-team scan` is the static counterpart to Module 11's runtime red teaming — it grades the **system prompts** in [src/agents/prompts/](https://github.com/yelghali/damn_vulnerable_agentic_app_security/tree/main/src/agents/prompts) against known prompt-injection vectors, so you can see why the `vulnerable/` prompt scores worse than the `secure/` one.
+
+<div class="task" data-title="Try it">
+
+> 1. Run `python -m src.scripts.governance_check` on the baseline — read the critical gaps.
+> 2. Set `SECURE_MODE=true` and re-run — confirm `RESULT: PASS`.
+> 3. Open [src/agents/governance/policy.yaml](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/governance/policy.yaml) and match each rule to the module that implemented it.
+> 4. Ask what would happen if a remote MCP server advertised `drop_table` or `delete_customer`: the answer should be "denied by policy and default deny," even before the agent reasons about it.
 
 </div>
 
 <div class="info" data-title="Learn more">
 
-> - [Microsoft Purview DSPM for AI](https://learn.microsoft.com/purview/ai-microsoft-purview)
-> - [DLP for AI](https://learn.microsoft.com/purview/dlp-learn-about-dlp)
+> - [Microsoft agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit)
+> - [OWASP Agentic AI — Threats & Mitigations](https://genai.owasp.org/resource/agentic-ai-threats-and-mitigations/)
 
 </div>
 
@@ -1331,17 +1408,16 @@ Two complementary controls: stop poison getting **in** (ingestion), and catch un
 def check_groundedness(answer: str, sources: list[str]) -> bool:
     if not get_settings().enable_groundedness:
         return True  # LAB-VULN(V6): no groundedness verification
-    corpus = " ".join(sources).lower()
-    sentences = [s for s in re.split(r"[.!?]\s+", answer) if len(s.split()) > 4]
-    supported = sum(1 for s in sentences
-                    if any(tok in corpus for tok in s.lower().split() if len(tok) > 5))
-    return supported / len(sentences) >= 0.5
+    creds = _content_safety_creds()
+    if creds is None or not sources:
+        raise SecurityConfigurationError("Groundedness is enabled but Azure config/sources are missing.")
+    return _azure_check_groundedness(answer, sources, creds)
 ```
 
 #### (b) The Azure wiring
 
 - **Trusted ingestion.** Validate/scan documents *before* indexing (provenance check, Prompt Shields `documents` scan, sensitivity-label gate) so a poisoned doc never enters the AI Search index in the first place.
-- **Groundedness detection.** Replace the heuristic with **Azure AI Content Safety Groundedness detection**, which returns ungrounded spans and (optionally) a correction. Bind it as a Foundry agent guardrail so every RAG answer is scored.
+- **Groundedness detection.** Use **Azure AI Content Safety Groundedness detection**, which returns ungrounded spans and (optionally) a correction. Bind it as a Foundry agent guardrail so every RAG answer is scored. If the Azure service is not configured, the app fails closed instead of approximating groundedness locally.
 
 ```python
 result = content_safety.detect_groundedness(
@@ -1425,11 +1501,55 @@ The `agentic` row is the one to watch: in the baseline a poisoned doc drives a c
 
 <style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
 
-## Module 10 — AI red teaming (automated)
+## Module 10 — Microsoft Purview: DLP & data governance
+
+> ⏱️ Extended · **Azure layer: Microsoft Purview** · Fixes **V3 + V6 at tenant scale** · Tenant admin + licensing
+>
+> **What this module fixes:** governs the same **PII (V3)** and **data-poisoning (V6)** risks at enterprise scale — discovering, labelling, and applying DLP to sensitive data across the org, beyond the per-app guards of Modules 3, 7, and 8.
+
+### Scenario
+
+Even with PII redaction and an agent-governance posture gate, the org needs **discovery, classification, labeling, and DLP** across AI interactions and data stores.
+
+### Remediate
+
+- Enable **DSPM for AI** to discover and risk-score AI usage.
+- Apply **sensitivity labels** to the financial documents in Blob/AI Search.
+- Configure **DLP for AI** to block sensitive content in prompts/responses.
+- Register the Foundry app as an **Entra-registered AI app** so Purview can see it.
+
+### Azure portal path
+
+Use this as the screenshot/click-through alternative when tenant-admin rights or Purview licensing are available:
+
+1. Microsoft Purview portal → **Data Security Posture Management for AI** → enable DSPM for AI for the tenant.
+2. **AI hub / AI apps** → register or confirm the Zava Foundry app so Purview can discover its prompts, responses, and connected data.
+3. **Information protection** → create or reuse sensitivity labels for financial documents.
+4. **Data loss prevention** → create a policy for generative AI prompts/responses that blocks SSNs, account numbers, and private-client terms.
+5. Re-run the Module 3 PII prompt and confirm the app-level redaction still works even if Purview has not populated yet.
+
+<div class="important" data-title="Fallback (no Purview / tenant admin)">
+
+> Demonstrate the same control end-to-end with the in-app **Azure AI Language PII + classification + audit logging** from Module 3. The Purview steps are then a guided click-through with screenshots or live portal navigation when the tenant supports it.
+
+</div>
+
+<div class="info" data-title="Learn more">
+
+> - [Microsoft Purview DSPM for AI](https://learn.microsoft.com/purview/ai-microsoft-purview)
+> - [DLP for AI](https://learn.microsoft.com/purview/dlp-learn-about-dlp)
+
+</div>
+
+---
+
+<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
+
+## Module 11 — AI red teaming (automated)
 
 > ⏱️ Extended · Assurance · Code-deployable
 
-Run the **Azure AI Red Teaming Agent** (PyRIT-backed) to *automatically* scan the hardened app across risk categories and attack strategies, producing a coverage scorecard you can re-run as a regression gate. Scans live in `src/redteam/`.
+Run the **Azure AI Red Teaming Agent** (PyRIT-backed) after Purview so the scan covers the fully governed app: Foundry guardrails, Entra/RBAC, MCP scoping, APIM, evaluations, and tenant-level data governance. It automatically scans across risk categories and attack strategies, producing a coverage scorecard you can re-run as a regression gate. Scans live in `src/redteam/`.
 
 ```bash
 python -m src.redteam.run
@@ -1438,94 +1558,6 @@ python -m src.redteam.run
 <div class="info" data-title="Learn more">
 
 > - [AI Red Teaming Agent](https://learn.microsoft.com/azure/ai-foundry/how-to/develop/run-scans-ai-red-teaming-agent)
-
-</div>
-
----
-
-<style>.container{max-width:min(1180px,94vw)!important}.container table{width:100%}.container pre{max-width:100%}</style>
-
-## Module 11 — Agent governance toolkit
-
-> ⏱️ Extended · Governance · Code-deployable (offline fallback included)
->
-> **What this module adds:** every prior module flipped *one* control. This module steps back and asks **"is the whole agent system governed?"** — you build an **agent inventory**, write a machine-readable **policy**, and run a **posture check** as a CI gate that maps every gap to an OWASP Agentic threat (`Tn`). This is where the per-module toggles graduate into one governed, auditable control plane.
-
-Apply Microsoft's [agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit) (AGT) — which targets the **OWASP Agentic Top 10** and ships native middleware for the Microsoft Agent Framework — to Zava's five agents and their tools.
-
-### 1 · The policy (the answer key, made machine-readable)
-
-The intended posture lives in [src/agents/governance/policy.yaml](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/governance/policy.yaml) in AGT's schema. It encodes the same rules you enforced by hand across Modules 1–8 — irreversible tools need human approval, reads are scoped, code is sandboxed, MCP is allow-listed:
-
-```yaml
-default_action: deny
-rules:
-  - name: require-approval-on-money-movement      # V4 / Agentic T10
-    condition: tool in ["transfer_funds", "send_statement_email"]
-    action: require_approval
-    approvers: ["account-owner"]
-  - name: deny-unsandboxed-code                    # V8 / Agentic T11
-    condition: tool == "generate_report" and capability == "arbitrary_code"
-    action: deny
-```
-
-### 2 · Run the posture check (two security checks, offline)
-
-Run the governance gate. In the **vulnerable baseline it FAILs** — seven critical controls are off — and the report names each gap with its `Tn` threat and `Vn`:
-
-```bash
-python -m src.scripts.governance_check          # exits non-zero -> CI gate fails
-# ...
-# Human-in-the-loop on money movement     FAIL  T10   V4  <- critical
-# Sandboxed code execution                FAIL  T11   V8  <- critical
-# Agent-to-agent message guard            FAIL  T12   V11 <- critical
-# Posture: 0/13 controls enabled · 7 critical gap(s).   RESULT: FAIL
-```
-
-Now flip the answer key and re-run — every control passes and the gate goes green:
-
-```bash
-SECURE_MODE=true python -m src.scripts.governance_check   # RESULT: PASS — exits 0
-```
-
-That's **check #1: a governance posture gate** you can wire into CI so a regression that disables HITL or the sandbox fails the build.
-
-**Check #2 — govern a tool at runtime.** With the real toolkit installed (`pip install agent-governance-toolkit`), wrap the highest-risk tool so the policy is enforced on every call, independently of the agent's reasoning:
-
-```python
-from agentmesh.governance import govern
-from src.agents.tools.db import transfer_funds
-
-# policy says transfer_funds -> require_approval; an unapproved call is denied.
-safe_transfer = govern(transfer_funds, policy="src/agents/governance/policy.yaml")
-```
-
-In production AGT runs as Agent Framework middleware, so this gate sits in front of *every* tool the agent calls — a defense-in-depth backstop behind the in-app `_authorize` and HITL checks from Module 4.
-
-### 3 · The full toolkit gate (Azure / CI)
-
-With AGT installed, the canonical commands map onto the same policy and prompts:
-
-```bash
-agt verify --policy src/agents/governance/policy.yaml --strict   # OWASP Agentic Top 10 gate
-agt red-team scan src/agents/prompts/ --min-grade B              # PromptDefense: 12-vector injection audit
-agt lint-policy src/agents/governance/                          # validate the policy file
-```
-
-`agt red-team scan` is the static counterpart to Module 10's runtime red teaming — it grades the **system prompts** in [src/agents/prompts/](https://github.com/yelghali/damn_vulnerable_agentic_app_security/tree/main/src/agents/prompts) against known prompt-injection vectors, so you can see why the `vulnerable/` prompt scores worse than the `secure/` one.
-
-<div class="task" data-title="Try it">
-
-> 1. Run `python -m src.scripts.governance_check` on the baseline — read the 6 critical gaps.
-> 2. Set `SECURE_MODE=true` and re-run — confirm `RESULT: PASS`.
-> 3. Open [src/agents/governance/policy.yaml](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/governance/policy.yaml) and match each rule to the module that implemented it.
-
-</div>
-
-<div class="info" data-title="Learn more">
-
-> - [Microsoft agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit)
-> - [OWASP Agentic AI — Threats & Mitigations](https://genai.owasp.org/resource/agentic-ai-threats-and-mitigations/)
 
 </div>
 
@@ -1560,7 +1592,7 @@ Fill in the scorecard, confirming each mitigation holds:
 | V8 | | | Code sandbox |
 | V9 | | | MCP allow-list + output re-scan |
 
-Where Module 10 is automated coverage, the capstone is the human, integrative *"can you still break it?"* exercise that proves understanding.
+Where Module 11 is automated coverage, the capstone is the human, integrative *"can you still break it?"* exercise that proves understanding.
 
 <div class="tip" data-title="Done!">
 

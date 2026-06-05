@@ -12,8 +12,9 @@ Powers the Knowledge agent. Two behaviours:
       ``group_ids`` intersect the caller's Entra group/object IDs are returned,
       mirroring the Azure AI Search ``search.in()`` filter pattern.
 
-Offline mode reads markdown files from ``data/docs`` (front-matter ``group_ids``)
-so retrieval + trimming are testable without Azure.
+Offline mode reads markdown files from ``data/docs`` for the vulnerable baseline.
+When document security is enabled, Azure AI Search is required so ACL trimming
+runs server-side with ``search.in()`` instead of as a local approximation.
 """
 
 from __future__ import annotations
@@ -28,6 +29,10 @@ from src.config import get_settings
 _DOCS_DIR = Path(__file__).resolve().parents[2] / "data" / "docs"
 _FRONT_MATTER = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
 logger = logging.getLogger("zava.search")
+
+
+class SearchConfigurationError(RuntimeError):
+    """Raised when a required Azure AI Search security control is unavailable."""
 
 
 def _load_offline_docs() -> list[dict[str, Any]]:
@@ -66,16 +71,22 @@ def search_documents(
     """Retrieve document chunks relevant to ``query``.
 
     ``caller_groups`` are the authenticated principal's Entra group/object IDs.
-    Uses Azure AI Search when ``SEARCH_ENDPOINT`` is configured, else the offline
-    markdown corpus. Document-level security trimming is applied identically in
-    both paths (server-side ``search.in()`` filter for Azure; in-memory for offline).
+    Uses Azure AI Search when ``SEARCH_ENDPOINT`` is configured. If document-level
+    security is enabled, Azure Search is required so trimming runs server-side.
+    The offline markdown corpus remains only for the intentionally vulnerable
+    local baseline.
     """
     settings = get_settings()
-    if settings.search_endpoint and settings.search_key:
+    if settings.search_endpoint:
         try:
             return _azure_search(query, caller_groups, top, settings)
-        except Exception as exc:  # noqa: BLE001 - any SDK/transport error -> offline
-            logger.warning("Azure AI Search failed, using offline corpus: %s", exc)
+        except Exception as exc:  # noqa: BLE001 - Azure failure must not leak untrimmed docs
+            raise SearchConfigurationError(f"Azure AI Search failed closed: {exc}") from exc
+
+    if settings.enable_doc_security:
+        raise SearchConfigurationError(
+            "Document security is enabled but SEARCH_ENDPOINT is not configured."
+        )
 
     docs = _load_offline_docs()
 
@@ -116,12 +127,15 @@ def _azure_search(
     returned to every caller (LAB-VULN V5).
     """
     from azure.core.credentials import AzureKeyCredential
+    from azure.identity import DefaultAzureCredential
     from azure.search.documents import SearchClient
+
+    credential = AzureKeyCredential(settings.search_key) if settings.search_key else DefaultAzureCredential()
 
     client = SearchClient(
         endpoint=settings.search_endpoint,
         index_name=settings.search_index_name,
-        credential=AzureKeyCredential(settings.search_key),
+        credential=credential,
     )
     search_filter: str | None = None
     if settings.enable_doc_security:

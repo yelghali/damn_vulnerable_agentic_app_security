@@ -12,6 +12,7 @@ stub model, so `pytest` is green with no Azure resources. They double as the
 from __future__ import annotations
 
 import pytest
+import re
 
 
 def _reload_with(monkeypatch: pytest.MonkeyPatch, **env: str):
@@ -28,6 +29,8 @@ def _reload_with(monkeypatch: pytest.MonkeyPatch, **env: str):
         "ENABLE_MCP_TOOL_SECURITY", "ENABLE_AI_GATEWAY", "ENABLE_A2A_GUARD",
         "USE_MCP_TOOLS", "PG_MCP_SERVER_URL", "MCP_TOOL_ALLOWLIST",
         "AI_GATEWAY_TOKEN_LIMIT",
+        "CONTENT_SAFETY_ENDPOINT", "CONTENT_SAFETY_KEY", "LANGUAGE_ENDPOINT",
+        "LANGUAGE_KEY", "SEARCH_ENDPOINT", "SEARCH_KEY",
         "CONTENT_SAFETY_SEVERITY_THRESHOLD", "CONTENT_SAFETY_BLOCK_OFF_TOPIC",
         "CONTENT_SAFETY_THRESHOLD_HATE", "CONTENT_SAFETY_THRESHOLD_SEXUAL",
         "CONTENT_SAFETY_THRESHOLD_VIOLENCE", "CONTENT_SAFETY_THRESHOLD_SELF_HARM",
@@ -36,15 +39,119 @@ def _reload_with(monkeypatch: pytest.MonkeyPatch, **env: str):
     for key, value in env.items():
         monkeypatch.setenv(key, value)
 
+    def enabled(key: str) -> bool:
+        value = str(env.get(key, "")).lower()
+        if value in {"true", "1", "yes"}:
+            return True
+        if value in {"false", "0", "no"}:
+            return False
+        return str(env.get("SECURE_MODE", "")).lower() in {"true", "1", "yes"}
+
+    if enabled("ENABLE_CONTENT_SAFETY") or enabled("ENABLE_PROMPT_SHIELDS") or enabled("ENABLE_GROUNDEDNESS"):
+        if "CONTENT_SAFETY_ENDPOINT" not in env:
+            monkeypatch.setenv("CONTENT_SAFETY_ENDPOINT", "https://content-safety.test")
+        if "CONTENT_SAFETY_KEY" not in env:
+            monkeypatch.setenv("CONTENT_SAFETY_KEY", "test-key")
+    if enabled("ENABLE_PII_REDACTION"):
+        if "LANGUAGE_ENDPOINT" not in env:
+            monkeypatch.setenv("LANGUAGE_ENDPOINT", "https://language.test")
+        if "LANGUAGE_KEY" not in env:
+            monkeypatch.setenv("LANGUAGE_KEY", "test-key")
+    if enabled("ENABLE_DOC_SECURITY"):
+        if "SEARCH_ENDPOINT" not in env:
+            monkeypatch.setenv("SEARCH_ENDPOINT", "https://search.test")
+        if "SEARCH_KEY" not in env:
+            monkeypatch.setenv("SEARCH_KEY", "test-key")
+
     import src.config as config
 
     config.get_settings.cache_clear()
 
     from src.agents.tools import db, email
     from src.agents.orchestrator import orchestrator
+    from src.agents.guard import guard
+    from src.agents.tools import search
 
     db.reset_offline_db()
+    _install_fake_azure_services(monkeypatch, guard, search)
     return orchestrator, db, email
+
+
+class _FakeAzureResponse:
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def _install_fake_azure_services(monkeypatch: pytest.MonkeyPatch, guard, search) -> None:
+    def fake_content_safety_post(url: str, **kwargs):
+        body = kwargs.get("json") or {}
+        if "text:shieldPrompt" in url:
+            text = body.get("userPrompt") or "\n".join(body.get("documents") or [])
+            attacked = bool(re.search(r"ignore (all|any|the) previous instructions|reveal (your|the) system prompt", text, re.I))
+            if body.get("documents"):
+                return _FakeAzureResponse({"documentsAnalysis": [{"attackDetected": attacked}]})
+            return _FakeAzureResponse({"userPromptAnalysis": {"attackDetected": attacked}})
+        if "text:detectGroundedness" in url:
+            return _FakeAzureResponse({"ungroundedDetected": False})
+
+        text = str(body.get("text", "")).lower()
+        categories = []
+        severities = {
+            "Hate": [("racial slur", 6), ("hate group", 4), ("inferior race", 6), ("offensive joke about", 4)],
+            "Violence": [("build a bomb", 6), ("make a weapon", 4), ("how to hurt", 4)],
+            "Sexual": [("explicit sexual", 6), ("nude", 2), ("porn", 6)],
+            "SelfHarm": [("end my life", 4), ("kill myself", 6), ("self-harm", 4)],
+        }
+        for category, terms in severities.items():
+            severity = max((sev for term, sev in terms if term in text), default=0)
+            if severity:
+                categories.append({"category": category, "severity": severity})
+        blocklists = []
+        if any(term in text for term in ("election", "political party", "who should i vote", "joke about")):
+            blocklists.append({"blocklistName": "zava-off-topic", "blocklistItemId": "off-topic"})
+        return _FakeAzureResponse({"categoriesAnalysis": categories, "blocklistsMatch": blocklists})
+
+    def fake_redact_pii(text: str, _creds) -> object:
+        redacted = text
+        found: list[dict[str, str]] = []
+        patterns = {
+            "USSocialSecurityNumber": r"\b\d{3}-\d{2}-\d{4}\b",
+            "CreditCardNumber": r"\b(?:\d[ -]?){13,16}\b",
+            "Email": r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b",
+            "PhoneNumber": r"\b(?:\+?1[ -]?)?\(?\d{3}\)?[ -]?\d{3}[ -]?\d{4}\b",
+            "AccountNumber": r"\bACC-\d{6,}\b",
+        }
+        for label, pattern in patterns.items():
+            for match in re.finditer(pattern, text):
+                found.append({"category": label, "text": match.group()})
+            redacted = re.sub(pattern, f"[{label}]", redacted)
+        return guard.PiiResult(text=redacted, entities=found)
+
+    def fake_azure_search(query: str, caller_groups: list[str] | None, top: int, settings) -> list[dict[str, str]]:
+        docs = search._load_offline_docs()
+        terms = [t for t in re.split(r"\W+", query.lower()) if t]
+        scored = []
+        for doc in docs:
+            hay = (doc["title"] + " " + doc["content"]).lower()
+            score = sum(hay.count(term) for term in terms)
+            if score:
+                scored.append((score, doc))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        results = [doc for _, doc in scored[:top]] or docs[:top]
+        if settings.enable_doc_security:
+            groups = set(caller_groups or [])
+            results = [doc for doc in results if not doc["group_ids"] or groups.intersection(doc["group_ids"])]
+        return [{"id": doc["id"], "title": doc["title"], "content": doc["content"]} for doc in results]
+
+    monkeypatch.setattr(guard.httpx, "post", fake_content_safety_post)
+    monkeypatch.setattr(guard, "_azure_redact_pii", fake_redact_pii)
+    monkeypatch.setattr(search, "_azure_search", fake_azure_search)
 
 
 def _ctx(customer_id: str = "CUST-1001", groups: list[str] | None = None):
@@ -133,6 +240,19 @@ def test_cs_per_category_threshold_is_independent(monkeypatch):
     assert exc.value.category == "hate"
 
 
+def test_cs_enabled_without_azure_config_fails_closed(monkeypatch):
+    _reload_with(
+        monkeypatch,
+        ENABLE_CONTENT_SAFETY="true",
+        CONTENT_SAFETY_ENDPOINT="",
+        CONTENT_SAFETY_KEY="",
+    )
+    from src.agents.guard import guard
+
+    with pytest.raises(guard.SecurityConfigurationError):
+        guard.check_content_safety("normal banking question")
+
+
 # --- V2: prompt shields (jailbreak) ----------------------------------------
 def test_v2_jailbreak_blocked_when_enabled(monkeypatch):
     orch, _, _ = _reload_with(monkeypatch, ENABLE_PROMPT_SHIELDS="true")
@@ -158,6 +278,19 @@ def test_v2_jailbreak_does_not_trigger_a2a_handoff(monkeypatch):
     assert not any("handoff executed" in e for e in res.events)
 
 
+def test_prompt_shields_enabled_without_azure_config_fails_closed(monkeypatch):
+    _reload_with(
+        monkeypatch,
+        ENABLE_PROMPT_SHIELDS="true",
+        CONTENT_SAFETY_ENDPOINT="",
+        CONTENT_SAFETY_KEY="",
+    )
+    from src.agents.guard import guard
+
+    with pytest.raises(guard.SecurityConfigurationError):
+        guard.shield_prompt("hello", source="user")
+
+
 # --- V3: PII redaction ------------------------------------------------------
 def test_v3_pii_redacted_when_enabled(monkeypatch):
     orch, _, _ = _reload_with(monkeypatch, ENABLE_PII_REDACTION="true")
@@ -178,6 +311,19 @@ def test_v3_profile_ssn_redacted_when_enabled(monkeypatch):
     res = orch.handle_turn("What's my SSN and full account number?", _ctx())
     assert "111-22-3333" not in res.answer
     assert "[USSocialSecurityNumber]" in res.answer
+
+
+def test_pii_enabled_without_azure_config_fails_closed(monkeypatch):
+    _reload_with(
+        monkeypatch,
+        ENABLE_PII_REDACTION="true",
+        LANGUAGE_ENDPOINT="",
+        LANGUAGE_KEY="",
+    )
+    from src.agents.guard import guard
+
+    with pytest.raises(guard.SecurityConfigurationError):
+        guard.redact_pii("My SSN is 123-45-6789")
 
 
 # --- V4: tool least privilege (IDOR) ---------------------------------------
@@ -256,6 +402,19 @@ def test_v5_no_trimming_exposes_restricted(monkeypatch):
 
     docs = search_documents("private client terms", caller_groups=["retail-customers"])
     assert any(d["id"] == "private-client-terms" for d in docs)
+
+
+def test_v5_doc_security_without_azure_search_fails_closed(monkeypatch):
+    _, _, _ = _reload_with(
+        monkeypatch,
+        ENABLE_DOC_SECURITY="true",
+        SEARCH_ENDPOINT="",
+        SEARCH_KEY="",
+    )
+    from src.agents.tools.search import SearchConfigurationError, search_documents
+
+    with pytest.raises(SearchConfigurationError):
+        search_documents("private client terms", caller_groups=["retail-customers"])
 
 
 # --- V6: indirect prompt injection in a poisoned doc -----------------------

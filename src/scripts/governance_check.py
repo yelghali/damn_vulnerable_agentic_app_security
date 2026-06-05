@@ -1,4 +1,4 @@
-"""Agent governance posture check (Module 11).
+"""Agent governance posture check (Module 7).
 
 A dependency-free, **offline** approximation of what Microsoft's
 agent-governance-toolkit (AGT, `agt verify --strict`) does for you in

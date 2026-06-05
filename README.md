@@ -167,9 +167,9 @@ The full guided lab lives in **[docs/workshop.md](docs/workshop.md)** (MOAW form
   laptop and exploit or observe all eleven weaknesses (V1–V11) — **no Azure required**.
 - **Part 2 · Add the Azure security layers:** harden the same app one Azure control at a
   time — Foundry guardrails, Azure AI Language PII, secure MCP, Entra ID + AI Search
-  document security, APIM AI gateway + Defender, and Purview DLP.
+  document security, APIM AI gateway + Defender, agent governance, Purview DLP, and AI red teaming.
   - *Core (Modules 1–6, ~4 h):* runs in your own subscription with **no tenant-admin rights**.
-  - *Extended (Modules 7–11 + capstone, +2–3 h):* Purview governance, evaluations, AI red teaming, agent governance.
+  - *Extended (Modules 7–11 + capstone, +2–3 h):* agent governance toolkit, groundedness, evaluations, Purview enterprise DLP, then automated AI red teaming.
 
 Part 2 loop: *Recall the exploit → Why it's dangerous → Add the Azure layer (design · secure code · Azure wiring) → Verify → Learn more.*
 
@@ -207,7 +207,8 @@ src/
     prompts/      vulnerable/ + secure/ system prompts
   config.py   SECURE_MODE + per-vulnerability feature toggles
   evals/      azure-ai-evaluation suites (Module 9)
-  redteam/    AI Red Teaming Agent scans (Module 10)
+  redteam/    AI Red Teaming Agent scans (Module 11)
+  agents/governance/ policy.yaml for Module 7 agent governance
   data/       seed SQL + sample financial docs (incl. one poisoned doc)
   infra/      Terraform (Foundry, Search, PostgreSQL, Blob, Entra, Key Vault, APIM, monitoring)
   scripts/    seed / deploy helpers

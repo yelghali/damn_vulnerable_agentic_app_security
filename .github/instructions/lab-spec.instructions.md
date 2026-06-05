@@ -18,7 +18,7 @@ For each topic the participant: (1) **observes / exploits** the vulnerability, t
 - Everything (app + infra-as-code) is deployable by participants in **their own Azure subscription**.
 - **Format:** iterative + self-paced, in two tracks:
   - **Core track (half-day, ~4 h):** Modules 0–6. Runs end-to-end in a guided session; everything is code/Terraform-deployable in the participant's own subscription with no tenant-admin rights.
-  - **Extended track (self-paced, +2–3 h → full day):** Modules 7–11 + capstone. Covers tenant-scoped governance (Purview), assurance (evaluations, AI red teaming), and Microsoft's agent governance toolkit. Participants continue on their own.
+  - **Extended track (self-paced, +2–3 h → full day):** Modules 7–11 + capstone. Covers app-level agent governance first, then groundedness and evaluations, then tenant-scoped enterprise governance with Purview, and finally automated AI red teaming. Participants continue on their own.
   Each module is independently runnable and builds on the previous; a participant can stop/resume between modules. Tenant-admin or slow-provisioning steps (Purview, Entra app reg / RBAC, Defender) are called out as **prep** with ready-to-run code or click-through **and a fallback** so they never block the timed flow.
 
 ## 2. Functional use case — "Zava Wealth Advisor"
@@ -65,7 +65,7 @@ Safety is **not** modeled as an extra LLM agent in the workflow. An agent is a n
 - **Model deployment.** Azure AI **Content Safety content filters** (harmful categories, **Prompt Shields** for direct + indirect/document injection, **Protected Material**) attached to the deployment, enforced on *every* model call regardless of app code.
 - **Foundry agent.** Agent-level guardrails + **Groundedness detection** configured on the Foundry agent, so each specialist agent inherits them.
 
-An **in-app guard layer** (`src/agents/guard/` — deterministic Prompt Shields/PII re-scan on **agent-to-agent messages**, **tool / MCP output** (V9), and **pre-log PII redaction** (V3)) is treated as a **later, optional** hardening step introduced with the **agent governance toolkit** (extended track), or pushed into the **API layer**. It exists in the repo (toggle-gated, used for offline before/after demos) but is **not** the primary control — Foundry is. Rule of thumb: enforce on the **platform** first (unavoidable); add in-app/API guards only for boundaries Foundry can't see, and only once governance is in scope.
+An **in-app guard layer** (`src/agents/guard/` — Azure-backed Prompt Shields/PII re-scan on **agent-to-agent messages**, **tool / MCP output** (V9), and **pre-log PII redaction** (V3)) is treated as a later hardening step or pushed into the **API layer**. It is **not** the primary control — Foundry is. Rule of thumb: enforce on the **platform** first (unavoidable); add in-app/API guards only for boundaries Foundry can't see. When these secure checks are enabled they must call Azure services and fail closed if Azure configuration is missing; do not present local regex/keyword heuristics as security controls.
 
 ## 3. Architecture
 
@@ -156,11 +156,11 @@ Per-module loop in **Part 2**: *Scenario → Recall the exploit → Why it's dan
 
 | M | Title | Focus | Notes |
 |---|-------|-------|-------|
-| 7 | **Data governance with Microsoft Purview** — DSPM for AI, sensitivity labels, **DLP for AI**, classification + audit; register the Foundry app as an Entra-registered AI app | V3, V6 | **tenant admin + licensing**; guided + fallback (§5b) |
+| 7 | **Agent governance toolkit (Microsoft)** — agent inventory, policy, governance posture; run `policy.yaml` and `python -m src.scripts.governance_check` before enterprise-wide controls | governance | uses [microsoft/agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit); offline fallback is code-deployable |
 | 8 | **Data poisoning deep-dive & groundedness** — trusted ingestion pipeline, content validation, Groundedness detection | V6 | code-deployable |
 | 9 | **Evaluations** — safety + quality evals (groundedness, relevance, content-harm, indirect-attack) with `azure-ai-evaluation` / Foundry evaluations; gate changes | assurance | code-deployable |
-| 10 | **AI Red Teaming (automated)** — run the **Azure AI Red Teaming Agent** (PyRIT) to *automatically* scan the secured app at scale across risk categories + attack strategies; produces a coverage scorecard you can re-run as a regression gate | assurance | code-deployable |
-| 11 | **Agent governance toolkit (Microsoft)** — agent inventory, policy, governance posture | governance | uses [microsoft/agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit); optional/self-paced |
+| 10 | **Data governance with Microsoft Purview** — DSPM for AI, sensitivity labels, **DLP for AI**, classification + audit; register the Foundry app as an Entra-registered AI app | V3, V6 at tenant scale | **tenant admin + licensing**; guided portal path + fallback (§5b) |
+| 11 | **AI Red Teaming (automated)** — run the **Azure AI Red Teaming Agent** (PyRIT) to *automatically* scan the secured app at scale across risk categories + attack strategies; produces a coverage scorecard you can re-run as a regression gate | assurance | code-deployable |
 | C | **Capstone red-team challenge (manual)** — *you* attack the hardened app by hand using everything you learned (jailbreaks, IDOR, indirect injection, code-exec, tool abuse, MCP abuse, and agent-to-agent poisoning), then fill in a scorecard confirming each V1–V11 mitigation holds. Where M10 is automated/tooling coverage, the capstone is the human, integrative "can you still break it?" exercise that proves understanding | all | builds on M0–10 |
 
 Each module: *Scenario → Exploit it → Why it's dangerous (OWASP/MS mapping) → **Remediate** → Verify → MS Learn references.* The **Remediate** step must genuinely *explore the solution*, not just flip a toggle. Structure it as: **(a) the secure design & code** — quote the real secure path from the implementation file and explain how it works; **(b) the Azure wiring** — the concrete service config (Terraform/CLI/SDK/policy) that enforces the control in production; **(c) design notes / trade-offs** — why this design, alternatives, and how it layers with other controls; then the `ENABLE_*` toggle, framed explicitly as *only* the offline before/after switch. Per-module times are annotated in `workshop.md`; the Core track fits a **half day (~4 h)** and the Extended track makes it a **full day**.
@@ -170,7 +170,7 @@ Each module: *Scenario → Exploit it → Why it's dangerous (OWASP/MS mapping) 
 Some steps need **tenant-admin rights or slow provisioning** and must not block the in-session clock. Provide each as ready-to-run code or click-through with a clear fallback:
 
 - **Entra ID (Module 5):** app registration(s) for API + client, expose-an-API scopes, OBO grant, and the least-privilege app roles/RBAC role assignments. Provide `az ad` / Terraform `azuread` snippets. Fallback if participant lacks tenant admin: use a pre-created app reg or run the module in "read-only walkthrough" mode.
-- **Microsoft Purview / DSPM for AI (Module 3 & 6):** enabling DSPM for AI, sensitivity labels, and DLP requires Purview + licensing and can take time to populate. Provide setup steps + screenshots and a code-only fallback (Azure AI Language PII + classification) so the security control is still demonstrated end-to-end without waiting on Purview ingestion.
+- **Microsoft Purview / DSPM for AI (Module 10):** enabling DSPM for AI, sensitivity labels, and DLP requires Purview + licensing and can take time to populate. Provide setup steps + screenshots / portal click-through and a code-only fallback (Azure AI Language PII + classification) so the security control is still demonstrated end-to-end without waiting on Purview ingestion.
 - **Defender for Cloud AI threat protection (Module 6):** enabling the AI workload plan is subscription-level; provide `az` enablement command and note propagation delay.
 - **Quotas/regions:** model + PostgreSQL capacity vary by region; document a known-good region and how to check quota before Module 0.
 
@@ -191,7 +191,7 @@ Some steps need **tenant-admin rights or slow provisioning** and must not block 
 | **Purview DSPM for AI / sensitivity labels / DLP for AI** | ⚠️ tenant admin + M365/Purview licensing | guided click-through + screenshots; **fallback: in-app Azure AI Language PII + classification + audit logging** so the control is demonstrated without Purview |
 | Evaluations (`azure-ai-evaluation`) | ✅ code | local + Foundry cloud eval |
 | AI Red Teaming Agent (PyRIT) | ✅ code | `azure-ai-evaluation` red team |
-| **Agent governance toolkit** | ❓ optional/self-paced | [microsoft/agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit) — apply its governance guidance to the lab's agents; deep-deploy steps are optional |
+| **Agent governance toolkit** | ✅ code + optional toolkit | `src/agents/governance/policy.yaml` + `python -m src.scripts.governance_check`; [microsoft/agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit) for the full AGT gate |
 
 > Rule: if a section isn't fully implementable in a self-service subscription, the workshop **must say so explicitly** and provide either a working fallback or a clearly-marked "further discussion" note. The **Core track must stay runnable end-to-end without tenant-admin rights**.
 
@@ -215,7 +215,7 @@ src/
       secure/     # hardened system prompts (answer key)
   config.py       # SECURE_MODE flag + feature toggles per vulnerability
   evals/          # azure-ai-evaluation suites (Module 9)
-  redteam/        # AI Red Teaming Agent scans (Module 10)
+  redteam/        # AI Red Teaming Agent scans (Module 11)
   data/           # seed SQL, sample financial docs (incl. one poisoned doc for M2/M8)
   infra/          # Terraform: Foundry project + AI Search + PostgreSQL + Blob + Entra + Key Vault + APIM (AI Gateway) + monitoring
   scripts/        # deploy/seed/teardown helpers

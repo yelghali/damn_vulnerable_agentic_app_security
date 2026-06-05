@@ -65,6 +65,27 @@ rules:
       allow-listed read tools, and their output is re-scanned before the model
       sees it. Maps to ENABLE_MCP_TOOL_SECURITY.
 
+  # --- Sensitive data: detect/redact before logs, model, tools, and client ---
+  - name: redact-sensitive-data-at-boundaries
+    condition: channel in ["prompt", "tool_output", "response", "log"]
+    action: redact
+    require:
+      - azure_ai_language_pii
+      - no_raw_secret_logging
+    description: >
+      Prompts, tool/MCP output, responses, and logs must pass through Azure AI
+      Language PII detection/redaction before they are persisted or sent to the
+      model/client. Maps to ENABLE_PII_REDACTION.
+
+  # --- Explicitly denied destructive/admin tools ----------------------------
+  - name: deny-destructive-admin-tools
+    condition: tool in ["delete_customer", "delete_account", "delete_statement", "drop_table"]
+    action: deny
+    description: >
+      Destructive or administrative tools are not exposed to Zava agents. A
+      remote MCP server advertising one of these tools must still be denied by
+      policy and the default deny posture.
+
   # --- Inter-agent handoffs: re-scan forged directives (V11 / Agentic T12) -----
   - name: guard-agent-to-agent-messages
     condition: channel == "handoff"

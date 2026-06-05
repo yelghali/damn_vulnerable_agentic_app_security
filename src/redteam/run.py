@@ -1,4 +1,4 @@
-"""Automated AI red-team scan (Module 10).
+"""Automated AI red-team scan (Module 11).
 
 In Azure this is the **Azure AI Red Teaming Agent** (PyRIT-backed, via
 ``azure-ai-evaluation``), which probes the deployed app at scale across risk
