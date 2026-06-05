@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="920" viewBox="0 0 1600 920" role="img" aria-labelledby="title desc">
+  <title id="title">Zava Wealth Advisor secure agentic AI architecture</title>
+  <desc id="desc">A draw.io-style architecture diagram showing client, platform edge, input guardrails, multi-agent app, tools and data services, and governance operations. The diagram labels security controls V1 through V11.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.14"/>
+    </filter>
+    <marker id="arrowBlue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M2,2 L10,6 L2,10 Z" fill="#2563eb"/></marker>
+    <marker id="arrowCyan" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M2,2 L10,6 L2,10 Z" fill="#0891b2"/></marker>
+    <marker id="arrowGreen" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M2,2 L10,6 L2,10 Z" fill="#16a34a"/></marker>
+    <marker id="arrowOrange" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M2,2 L10,6 L2,10 Z" fill="#ea580c"/></marker>
+    <style>
+      .label{font-family:Segoe UI,Arial,sans-serif;fill:#1f2937}.small{font-size:13px}.med{font-size:15px}.title{font-size:29px;font-weight:700}.sub{font-size:15px;fill:#475569}.lane-title{font-size:16px;font-weight:700}.box-title{font-size:14px;font-weight:700}.muted{fill:#475569}.chip{font-size:12px;font-weight:700}.arrow{fill:none;stroke-width:4;stroke-linecap:round}.thin{fill:none;stroke-width:2.5;stroke-linecap:round}.dash{stroke-dasharray:8 7}
+    </style>
+  </defs>
+  <rect width="1600" height="920" fill="#f8fafc"/>
+  <circle cx="1480" cy="110" r="180" fill="#dbeafe" opacity="0.42"/>
+  <circle cx="210" cy="790" r="170" fill="#dcfce7" opacity="0.35"/>
+  <text x="800" y="48" text-anchor="middle" class="label title">Zava Wealth Advisor - Secure Agentic AI Architecture</text>
+  <text x="800" y="78" text-anchor="middle" class="label sub">Part 1 removes the controls to expose V1-V11. Part 2 adds Azure security layers back one boundary at a time.</text>
+
+  <rect x="40" y="342" width="160" height="90" rx="14" fill="#eff6ff" stroke="#2563eb" stroke-width="2" filter="url(#shadow)"/>
+  <text x="120" y="376" text-anchor="middle" class="label box-title" fill="#1e3a8a">Client / learner</text>
+  <text x="120" y="405" text-anchor="middle" class="label small" fill="#1e3a8a">Chat UI</text>
+
+  <rect x="250" y="150" width="230" height="480" rx="18" fill="#ecfeff" stroke="#0891b2" stroke-width="2"/>
+  <text x="365" y="180" text-anchor="middle" class="label lane-title" fill="#155e75">Platform edge</text>
+  <rect x="275" y="220" width="180" height="78" rx="12" fill="#cffafe" stroke="#0891b2" stroke-width="2"/>
+  <text x="365" y="248" text-anchor="middle" class="label box-title" fill="#164e63">APIM AI Gateway</text>
+  <text x="365" y="272" text-anchor="middle" class="label small" fill="#164e63">V10 auth, audit, token limits</text>
+  <rect x="275" y="335" width="180" height="78" rx="12" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+  <text x="365" y="363" text-anchor="middle" class="label box-title" fill="#0c4a6e">Microsoft Entra ID</text>
+  <text x="365" y="387" text-anchor="middle" class="label small" fill="#0c4a6e">V5 OBO + RBAC</text>
+  <rect x="275" y="450" width="180" height="78" rx="12" fill="#f0f9ff" stroke="#0284c7" stroke-width="2"/>
+  <text x="365" y="478" text-anchor="middle" class="label box-title" fill="#0c4a6e">Key Vault + MI</text>
+  <text x="365" y="502" text-anchor="middle" class="label small" fill="#0c4a6e">secrets stay off the app</text>
+
+  <rect x="530" y="150" width="260" height="480" rx="18" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="660" y="180" text-anchor="middle" class="label lane-title" fill="#166534">Input and model guardrails</text>
+  <rect x="560" y="212" width="200" height="72" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text x="660" y="238" text-anchor="middle" class="label box-title" fill="#14532d">Content Safety</text>
+  <text x="660" y="260" text-anchor="middle" class="label small" fill="#14532d">V1/V2 harm + off-topic</text>
+  <rect x="560" y="312" width="200" height="72" rx="12" fill="#bbf7d0" stroke="#16a34a" stroke-width="2"/>
+  <text x="660" y="338" text-anchor="middle" class="label box-title" fill="#14532d">Prompt Shields</text>
+  <text x="660" y="360" text-anchor="middle" class="label small" fill="#14532d">V2/V6 direct + indirect</text>
+  <rect x="560" y="412" width="200" height="72" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+  <text x="660" y="438" text-anchor="middle" class="label box-title" fill="#14532d">PII redaction</text>
+  <text x="660" y="460" text-anchor="middle" class="label small" fill="#14532d">V3 prompts, logs, output</text>
+  <rect x="560" y="512" width="200" height="72" rx="12" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="660" y="538" text-anchor="middle" class="label box-title" fill="#14532d">Groundedness</text>
+  <text x="660" y="560" text-anchor="middle" class="label small" fill="#14532d">V6 source support</text>
+
+  <rect x="850" y="110" width="360" height="560" rx="18" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+  <text x="1030" y="140" text-anchor="middle" class="label lane-title" fill="#9a3412">Multi-agent app</text>
+  <text x="1030" y="162" text-anchor="middle" class="label small" fill="#9a3412">FastAPI + Microsoft Agent Framework</text>
+  <ellipse cx="1030" cy="220" rx="82" ry="38" fill="#fed7aa" stroke="#ea580c" stroke-width="2"/>
+  <text x="1030" y="225" text-anchor="middle" class="label box-title" fill="#7c2d12">Orchestrator</text>
+  <rect x="878" y="288" width="140" height="62" rx="12" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
+  <text x="948" y="313" text-anchor="middle" class="label box-title" fill="#7c2d12">Accounts agent</text>
+  <text x="948" y="333" text-anchor="middle" class="label small" fill="#7c2d12">read tools</text>
+  <rect x="1042" y="288" width="140" height="62" rx="12" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
+  <text x="1112" y="313" text-anchor="middle" class="label box-title" fill="#7c2d12">Transactions</text>
+  <text x="1112" y="333" text-anchor="middle" class="label small" fill="#7c2d12">HITL gate V4</text>
+  <rect x="878" y="396" width="140" height="70" rx="12" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
+  <text x="948" y="423" text-anchor="middle" class="label box-title" fill="#7c2d12">Knowledge / RAG</text>
+  <text x="948" y="444" text-anchor="middle" class="label small" fill="#7c2d12">doc security V5/V6</text>
+  <rect x="1042" y="396" width="140" height="70" rx="12" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
+  <text x="1112" y="423" text-anchor="middle" class="label box-title" fill="#7c2d12">Reporting</text>
+  <text x="1112" y="444" text-anchor="middle" class="label small" fill="#7c2d12">code sandbox V8</text>
+  <rect x="930" y="530" width="200" height="72" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+  <text x="1030" y="556" text-anchor="middle" class="label box-title" fill="#78350f">Agent-to-agent guard</text>
+  <text x="1030" y="578" text-anchor="middle" class="label small" fill="#78350f">V11 forged handoff check</text>
+
+  <rect x="1270" y="150" width="280" height="480" rx="18" fill="#f8fafc" stroke="#64748b" stroke-width="2"/>
+  <text x="1410" y="180" text-anchor="middle" class="label lane-title" fill="#334155">Tools, data, and runtime</text>
+  <rect x="1304" y="206" width="212" height="76" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="2"/>
+  <text x="1410" y="232" text-anchor="middle" class="label box-title" fill="#312e81">Azure AI Foundry</text>
+  <text x="1410" y="254" text-anchor="middle" class="label small" fill="#312e81">V1/V2 governed models + agents</text>
+  <rect x="1304" y="308" width="212" height="76" rx="12" fill="#f1f5f9" stroke="#475569" stroke-width="2"/>
+  <text x="1410" y="334" text-anchor="middle" class="label box-title" fill="#1e293b">PostgreSQL / SQLite</text>
+  <text x="1410" y="356" text-anchor="middle" class="label small" fill="#1e293b">V4 RLS + parameterized SQL</text>
+  <rect x="1304" y="410" width="212" height="76" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="2"/>
+  <text x="1410" y="436" text-anchor="middle" class="label box-title" fill="#064e3b">AI Search + Blob</text>
+  <text x="1410" y="458" text-anchor="middle" class="label small" fill="#064e3b">V5/V6 ACL + trusted ingestion</text>
+  <rect x="1304" y="512" width="212" height="76" rx="12" fill="#fdf2f8" stroke="#db2777" stroke-width="2"/>
+  <text x="1410" y="538" text-anchor="middle" class="label box-title" fill="#831843">Remote MCP tools</text>
+  <text x="1410" y="560" text-anchor="middle" class="label small" fill="#831843">V9 pinned + allow-listed</text>
+
+  <rect x="260" y="735" width="1020" height="70" rx="16" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
+  <text x="770" y="763" text-anchor="middle" class="label box-title" fill="#4c1d95">Governance and operations</text>
+  <text x="770" y="788" text-anchor="middle" class="label small" fill="#4c1d95">Purview DSPM/DLP (V3/V6) - Defender for Cloud (V7) - Monitor/Log Analytics (V7/V10) - Evaluations and red teaming</text>
+
+  <path d="M200 387 L248 387" class="arrow" stroke="#2563eb" marker-end="url(#arrowBlue)"/>
+  <path d="M480 387 L528 387" class="arrow" stroke="#0891b2" marker-end="url(#arrowCyan)"/>
+  <path d="M790 387 L848 387" class="arrow" stroke="#16a34a" marker-end="url(#arrowGreen)"/>
+  <path d="M1210 387 L1268 387" class="arrow" stroke="#ea580c" marker-end="url(#arrowOrange)"/>
+  <path d="M1030 258 L948 288" class="thin" stroke="#ea580c"/>
+  <path d="M1030 258 L1112 288" class="thin" stroke="#ea580c"/>
+  <path d="M1030 258 L948 396" class="thin" stroke="#ea580c"/>
+  <path d="M1030 258 L1112 396" class="thin" stroke="#ea580c"/>
+  <path d="M948 466 L1005 530" class="thin dash" stroke="#d97706"/>
+  <text x="973" y="508" class="label chip" fill="#92400e">handoff</text>
+  <path d="M1112 350 L1304 550" class="thin" stroke="#db2777"/>
+  <text x="1210" y="470" class="label chip" fill="#be185d">MCP</text>
+  <path d="M948 466 L1304 448" class="thin" stroke="#059669"/>
+  <text x="1170" y="437" class="label chip" fill="#047857">RAG</text>
+  <path d="M948 350 L1304 346" class="thin" stroke="#475569"/>
+  <path d="M1030 220 L1304 244" class="thin" stroke="#4f46e5"/>
+</svg>

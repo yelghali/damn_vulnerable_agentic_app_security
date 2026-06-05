@@ -29,6 +29,7 @@ changes — ending every module with a verifiable "before vs. after".
 | V8 | Unsafe code execution | Sandboxed Foundry Code Interpreter |
 | V9 | Insecure MCP tool integration | Pinned servers, scoped OBO, tool allow-list, guarded output |
 | V10 | No AI gateway | Azure API Management (token limits, auth, logging, caching) |
+| V11 | Agent-to-agent poisoning | Re-scan inter-agent handoffs before executing state-changing directives |
 
 Each vulnerability maps to the **OWASP Top 10 for LLM Apps (2025)**, the **OWASP
 Agentic AI threat taxonomy**, and a **Microsoft control baseline** — see
@@ -36,19 +37,9 @@ Agentic AI threat taxonomy**, and a **Microsoft control baseline** — see
 
 ## Architecture
 
-```
-User ──> Chat Web UI ──> FastAPI backend
-                              │  Microsoft Agent Framework (multi-agent orchestration)
-        ┌─ Orchestrator ─┬─ Knowledge(RAG) ─┬─ Accounts ─┬─ Transactions ─┬─ Reporting
-        │   guardrails enforced on Foundry (model filters + agent guardrails)
-        └─ [later/optional: in-app guard middleware or API-layer guard]
-                                       │
-                Azure API Management (AI Gateway)
-                                       │
-   Azure AI Foundry · Azure AI Search · PostgreSQL Flex (local or MCP) · Code Interpreter
-        │
-   Entra ID (OBO/RBAC) · Key Vault · Purview/DSPM · Defender for Cloud · Monitor
-```
+![Zava Wealth Advisor architecture](docs/assets/diagrams/architecture.drawio.svg)
+
+The editable diagram source is [docs/assets/diagrams/architecture.drawio](docs/assets/diagrams/architecture.drawio), which opens in diagrams.net / draw.io.
 
 - **Orchestration:** Microsoft Agent Framework (`agent-framework`).
 - **Models / agents / evals:** Azure AI Foundry project SDK (`azure-ai-projects>=2.0.0`).
@@ -151,12 +142,10 @@ vulnerable vs. secure posture of the agents matches the app.
 
 ## The workshop
 
-The full guided lab lives in **[docs/workshop.md](docs/workshop.md)** (MOAW format):
-
 The full guided lab lives in **[docs/workshop.md](docs/workshop.md)** (MOAW format), told in **two parts**:
 
 - **Part 1 · Understand the vulnerabilities (run locally):** break the app on your
-  laptop and exploit all ten weaknesses (V1–V10) through the chat UI — **no Azure required**.
+  laptop and exploit or observe all eleven weaknesses (V1–V11) — **no Azure required**.
 - **Part 2 · Add the Azure security layers:** harden the same app one Azure control at a
   time — Foundry guardrails, Azure AI Language PII, secure MCP, Entra ID + AI Search
   document security, APIM AI gateway + Defender, and Purview DLP.
@@ -174,7 +163,7 @@ the file:
 ```powershell
 # Windows (PowerShell)
 $env:Path = "C:\Program Files\nodejs;$env:APPDATA\npm;$env:Path"
-npm install -g @moaw/cli
+& "C:\Program Files\nodejs\npm.cmd" install -g @moaw/cli
 & "$env:APPDATA\npm\moaw.cmd" serve docs/workshop.md
 # Preview at http://localhost:4444/workshop/workshop.md (auto-reloads on save)
 ```

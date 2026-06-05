@@ -111,6 +111,7 @@ User ──> Chat Web UI ──> Backend API (FastAPI)
 | V8 | **Unsafe code execution** — reporting agent runs model-generated code with no sandbox, full network/file access | **Sandboxed Code Interpreter** (Foundry-hosted), no outbound network, ephemeral FS, output validation, CPU/time limits |
 | V9 | **Insecure MCP tool integration** — agent connects to an unpinned/untrusted **MCP server**, the DB admin credential is passed straight through, all advertised MCP tools are callable (no allow-list), and MCP responses are trusted as clean text (tool/output poisoning) | Pin/approve trusted MCP servers only, pass a **scoped read-only identity (OBO)** to the server, **allow-list** the specific MCP tools each agent may call, and run MCP outputs through the **guard middleware** (Prompt Shields + PII) as untrusted content |
 | V10 | **No AI gateway** — models and tool endpoints are exposed directly: model keys in the app, no central authN/Z, no token throttling, no audit | Front models + tools with **Azure API Management (AI Gateway)**: managed-identity/OBO auth, **token-based rate limiting**, key vaulting, centralized logging + semantic caching |
+| V11 | **Agent-to-agent poisoning** — a specialist agent emits a forged handoff that another agent executes without re-checking intent or risk | Re-scan inter-agent handoff messages with deterministic guard middleware; refuse forged state-changing directives before dispatching to another agent |
 
 ### 4a. Standards mapping (OWASP + Microsoft)
 
@@ -128,12 +129,13 @@ Each vulnerability maps to **OWASP Top 10 for LLM Apps (2025)**, the **OWASP Age
 | V8 | LLM05 Improper Output Handling · LLM06 Excessive Agency | T11 Unexpected RCE / Code Attacks | MCSB **PA** + workload isolation; Foundry sandboxed Code Interpreter; WAF Security |
 | V9 | LLM06 Excessive Agency · LLM01 Prompt Injection (via tool output) · LLM03 Supply Chain | T2 Tool Misuse · T12 Agent Communication Poisoning | MCSB **PA** + **SC (Supply Chain)**; MCP tool allow-listing + scoped OBO; guard on tool output |
 | V10 | LLM10 Unbounded Consumption · LLM02 Sensitive Info Disclosure (keys) | T4 Resource Overload · T8 Repudiation & Untraceability | MCSB **NS** + **IM** + **LT**; **Azure API Management** AI Gateway (token limit, auth, logging) |
+| V11 | LLM01 Prompt Injection · LLM06 Excessive Agency | T12 Agent Communication Poisoning | MCSB **PA**; deterministic inter-agent guard; human-in-the-loop for state-changing actions |
 
 ## 5. Lab modules (workshop.md sections)
 
 The lab is told as **two coherent parts**:
 
-- **Part 1 · Understand the vulnerabilities (run locally).** Replaces the old "Module 0". A single local-only walkthrough where the participant runs the app on their laptop (seeded SQLite + local SLM, **no Azure**) and **exploits all of V1–V10 through the chat UI**. Ends with a "what you'll fix in Part 2" map. This is the consolidated "exploit" track.
+- **Part 1 · Understand the vulnerabilities (run locally).** Replaces the old "Module 0". A single local-only walkthrough where the participant runs the app on their laptop (seeded SQLite + local SLM, **no Azure**) and **exploits or observes all of V1–V11**. Ends with a "what you'll fix in Part 2" map. This is the consolidated "exploit" track.
 - **Part 2 · Add the Azure security layers.** Modules 1–11 + capstone. Each module adds **one named Azure security layer** over the baseline and re-runs a Part 1 exploit to prove it's dead. Module headers are named after the Azure layer they add (e.g. "Module 1 — Foundry guardrails", "Module 5 — Entra ID identity & AI Search document security", "Module 6 — APIM AI gateway, observability, rate limiting & Defender"). Part 2 = the old Core track (Modules 1–6, no tenant admin) + Extended track (Modules 7–11 + capstone).
 
 Per-module loop in **Part 2**: *Scenario → Recall the exploit → Why it's dangerous (OWASP/MS mapping) → **Add the Azure layer** (design · secure code · Azure wiring) → Verify → MS Learn references.* The **Add the Azure layer** section is wrapped in a `<details>` and structured as **(a) secure design & code**, **(b) Azure wiring**, **(c) design notes / trade-offs**, then the `ENABLE_*` toggle (offline before/after switch only).
@@ -146,7 +148,7 @@ Per-module loop in **Part 2**: *Scenario → Recall the exploit → Why it's dan
 | 1 | **Responsible & Safe AI** — harmful categories (sexual, hate, violence, self-harm), off-topic/politics, "bad jokes", weak system prompt; enable Content Safety filters + blocklists + system-prompt hardening **on the Foundry model deployment + agent** | V1, V2 | LLM05/09, T6 | 35m |
 | 2 | **Prompt injection & jailbreak** — direct jailbreak + **indirect** injection via a poisoned RAG doc; enable **Prompt Shields** (user-prompt + document) **as a Foundry model/agent guardrail** | V2, V6 | LLM01, T6 | 35m |
 | 3 | **PII & sensitive-data protection (in-app / API guard)** — detect + redact PII before model / logs / output (Azure AI Language PII at the API layer; Foundry can't redact prompt PII for you); system-prompt leakage. *This is the first in-app guard layer beyond Foundry.* | V3 | LLM02/07, T15 | 30m |
-| 4 | **Tool least privilege, MCP tool scoping, human-in-the-loop & secure code execution** — scope DB role + RLS, attach data tools as **local *or* Postgres MCP server** tools, allow-list + scope the MCP surface, HITL gate on `transfer_funds`, sandbox the reporting **code interpreter** | V4, V8, V9 | LLM06, T2/T10/T11/T12 | 45m |
+| 4 | **Tool least privilege, MCP tool scoping, human-in-the-loop & secure code execution** — scope DB role + RLS, attach data tools as **local *or* Postgres MCP server** tools, allow-list + scope the MCP surface, HITL gate on `transfer_funds`, sandbox the reporting **code interpreter**, and re-scan inter-agent handoffs | V4, V8, V9, V11 | LLM06, T2/T10/T11/T12 | 45m |
 | 5 | **Identity & access** — Entra **OBO** + managed identity + least-priv RBAC + Key Vault; **RAG document-level security trimming** by user identity in AI Search (`group_ids` + `search.in()`) | V5 | LLM06, T3/T9 | 40m |
 | 6 | **Secure infrastructure, AI gateway & monitoring** — front models + MCP/tool endpoints with **Azure API Management (AI Gateway)** (central auth, token-based throttling, key vaulting, logging, caching), private endpoints, Defender for Cloud AI, Monitor/Log Analytics, safe errors | V7, V10 | LLM10, T4/T8 | 35m |
 
@@ -159,7 +161,7 @@ Per-module loop in **Part 2**: *Scenario → Recall the exploit → Why it's dan
 | 9 | **Evaluations** — safety + quality evals (groundedness, relevance, content-harm, indirect-attack) with `azure-ai-evaluation` / Foundry evaluations; gate changes | assurance | code-deployable |
 | 10 | **AI Red Teaming (automated)** — run the **Azure AI Red Teaming Agent** (PyRIT) to *automatically* scan the secured app at scale across risk categories + attack strategies; produces a coverage scorecard you can re-run as a regression gate | assurance | code-deployable |
 | 11 | **Agent governance toolkit (Microsoft)** — agent inventory, policy, governance posture | governance | uses [microsoft/agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit); optional/self-paced |
-| C | **Capstone red-team challenge (manual)** — *you* attack the hardened app by hand using everything you learned (jailbreaks, IDOR, indirect injection, code-exec, tool abuse), then fill in a scorecard confirming each V1–V8 mitigation holds. Where M10 is automated/tooling coverage, the capstone is the human, integrative "can you still break it?" exercise that proves understanding | all | builds on M0–10 |
+| C | **Capstone red-team challenge (manual)** — *you* attack the hardened app by hand using everything you learned (jailbreaks, IDOR, indirect injection, code-exec, tool abuse, MCP abuse, and agent-to-agent poisoning), then fill in a scorecard confirming each V1–V11 mitigation holds. Where M10 is automated/tooling coverage, the capstone is the human, integrative "can you still break it?" exercise that proves understanding | all | builds on M0–10 |
 
 Each module: *Scenario → Exploit it → Why it's dangerous (OWASP/MS mapping) → **Remediate** → Verify → MS Learn references.* The **Remediate** step must genuinely *explore the solution*, not just flip a toggle. Structure it as: **(a) the secure design & code** — quote the real secure path from the implementation file and explain how it works; **(b) the Azure wiring** — the concrete service config (Terraform/CLI/SDK/policy) that enforces the control in production; **(c) design notes / trade-offs** — why this design, alternatives, and how it layers with other controls; then the `ENABLE_*` toggle, framed explicitly as *only* the offline before/after switch. Per-module times are annotated in `workshop.md`; the Core track fits a **half day (~4 h)** and the Extended track makes it a **full day**.
 
@@ -238,6 +240,6 @@ docs/
 ## 8. Definition of done
 
 - `terraform apply` + seed script stands up the full app in a fresh subscription.
-- Vulnerable variant demonstrably exhibits each V1–V10.
+- Vulnerable variant demonstrably exhibits each V1–V11.
 - Secure variant passes the capstone red-team and demonstrably mitigates each.
 - `workshop.md` walks a participant end-to-end with copy-pasteable commands; the **Core track** runs without tenant-admin rights and any non-implementable step has a stated fallback or "further discussion" note.

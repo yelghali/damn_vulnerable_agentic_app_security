@@ -48,7 +48,7 @@ Zava is a fictional company. The assistant deliberately handles **PII and financ
 The lab is one coherent story told in **two parts**:
 
 > ### Part 1 · Understand the vulnerabilities — *run it locally and break it*
-> Spin the app up on your laptop (no Azure, no cost) and **exploit every weakness** through the chat UI. You'll see the agent leak its system prompt, read another customer's data, obey a poisoned document, wire funds with no approval, and more. By the end you've felt all eleven vulnerabilities (V1–V11) first-hand.
+> Spin the app up on your laptop (no Azure, no cost) and **exploit or observe every weakness**. Most attacks run through the chat UI; a few infrastructure and MCP items are inspected through code/tests because they are not meaningful UI clicks. By the end you've felt all eleven vulnerabilities (V1–V11) first-hand.
 >
 > ### Part 2 · Add the Azure security layers — *harden it, one Azure control at a time*
 > Now layer Microsoft's security stack over the same app: **Entra ID** identity, **AI Search** document-level security, **model + agent guardrails on Foundry**, **secure MCP through Foundry**, **observability + rate limiting with the APIM AI gateway**, **DLP with Purview**, and **Defender** to detect attacks and insecure code. Each layer closes one of the vulnerabilities you exploited in Part 1.
@@ -95,7 +95,7 @@ Everything in this lab — the diagram, the exploit buttons, the modules — is 
 
 <div class="info" data-title="A few things that confuse everyone (read this once)">
 
-> - **Module numbers are *not* vulnerability numbers.** Modules are named after the **Azure layer** they add, so one module can close several `Vn` (e.g. Module 4 closes V4, V8, V9). Use the *"Closed by"* column above to navigate.
+> - **Module numbers are *not* vulnerability numbers.** Modules are named after the **Azure layer** they add, so one module can close several `Vn` (e.g. Module 4 closes V4, V8, V9, and V11). Use the *"Closed by"* column above to navigate.
 > - **There are 13 toggles for 11 vulnerabilities.** Two vulnerabilities need more than one control — **V4** = least-privilege **and** human-in-the-loop, **V5** = On-Behalf-Of identity **and** document-level security — so the posture panel shows 13 switches for 11 `Vn` codes. That's expected, not a miscount.
 > - **The Module 4 "tools" trio are *three different trust boundaries*, not one repeated bug.** **V4** = the app's *own* tools are over-powered (IDOR / SQL injection / unapproved transfers → boundary *app → database*). **V8** = the code interpreter runs *model-written code* on the host (→ boundary *model → host runtime*, RCE). **V9** = the agent calls a *remote* MCP tool server it doesn't control (→ boundary *app → third-party supply chain*, poisoned tool output). Different boundary, different fix — they only share Module 4.
 > - **V11 adds a *fourth* boundary in Module 4: agent → agent.** V4/V8/V9 all guard what *one* agent does with its tools. **V11** is different: one agent (Knowledge) emits a *handoff message* that drives an action in *another* agent (Transactions). The handoff carries no jailbreak wording, so Prompt Shields (V6) waves it through — the fix is a separate guard that re-scans *inter-agent* messages for forged state-changing directives.
@@ -155,66 +155,16 @@ Every module banner and the final reference table also tag each weakness with a 
 
 Zava is a **multi-agent app** — an **Orchestrator** that routes each request to **four specialist agents** (Accounts, Transactions, Knowledge/RAG, Reporting), so **five agents in total** — wrapped, in Part 2, by **layers of Azure security controls**. Read this one picture and the whole lab clicks into place: every vulnerability **Vn** (defined in the table just above) is just a missing control at one specific point in the request path.
 
-![Zava architecture: a request flows from the client through the platform edge (APIM, Entra ID) and input guards (Content Safety, Prompt Shields, PII redaction) into the multi-agent app (Orchestrator routing to Accounts, Transactions, Knowledge/RAG, Reporting), which calls the tools & data plane (Postgres/SQLite, MCP tools, AI Search, Code interpreter, Foundry model), then back out through the output guards (Groundedness, PII redaction). Each box is labelled with the vulnerability it closes, V1–V10.](assets/diagrams/architecture.png)
+![Zava architecture: a request flows from the client through APIM, Entra ID, guardrails, the multi-agent app, tools and data services, then back through output controls. The draw.io diagram labels the V1-V11 controls and the Azure services that enforce them.](assets/diagrams/architecture.drawio.svg)
 
 <details>
-<summary>Mermaid source for the diagram above (for editing/regenerating)</summary>
+<summary>Editable draw.io source for the diagram above</summary>
 
-```mermaid
-flowchart LR
-    U["🧑 Client · Chat UI"]
-
-    subgraph EDGE["🛡️ Platform edge (Part 2)"]
-      APIM["APIM AI gateway · V10"]
-      ENTRA["Entra ID OBO · V5"]
-    end
-
-    subgraph IN["🔍 Input guards"]
-      CS["Content Safety · V1"]
-      PS["Prompt Shields · V2/V6"]
-      PIIin["PII redaction · V3"]
-    end
-
-    subgraph APP["🤖 Zava multi-agent app"]
-      ORCH(["Orchestrator"])
-      ACC["Accounts"]
-      TX["Transactions"]
-      KN["Knowledge / RAG"]
-      RP["Reporting"]
-      ORCH --> ACC
-      ORCH --> TX
-      ORCH --> KN
-      ORCH --> RP
-    end
-
-    subgraph DATA["🗄️ Tools & data plane"]
-      DB[("Postgres / SQLite · V4")]
-      MCP["MCP tools · V9"]
-      AIS[("AI Search · V5")]
-      SAND["Code interpreter · V8"]
-      MODEL["Foundry model · V1/V2"]
-    end
-
-    subgraph OUT["🔍 Output guards"]
-      GND["Groundedness · V6"]
-      PIIout["PII redaction · V3"]
-    end
-
-    U --> APIM --> ENTRA --> IN --> ORCH
-    ACC --> DB
-    TX --> DB
-    TX --> MCP
-    KN --> AIS
-    RP --> SAND
-    ORCH --> MODEL
-    APP --> OUT --> U
-```
-
-> Regenerate with: `npx -p @mermaid-js/mermaid-cli mmdc -i docs/assets/diagrams/architecture.mmd -o docs/assets/diagrams/architecture.png -b white -s 3`
+Open [assets/diagrams/architecture.drawio](assets/diagrams/architecture.drawio) in diagrams.net / draw.io to edit the architecture. The checked-in SVG preview [assets/diagrams/architecture.drawio.svg](assets/diagrams/architecture.drawio.svg) is what this workshop renders.
 
 </details>
 
-**How to read it:** a request flows **top → bottom** through the platform edge, the input guards, the agents (which call tools, data and the model), then the output guards on the way back. In the **vulnerable baseline every box except the agents is missing** — that's V1–V10. (V11, agent-to-agent poisoning, is a boundary *inside* the app box, so it isn't drawn as its own box.) Each Part-2 module adds one box back.
+**How to read it:** a request flows **left → right** through the platform edge, input guards, agents, tools/data services, and output controls. In the **vulnerable baseline every security-control box is missing**. Part 2 adds them back one layer at a time, including the V11 agent-to-agent guard inside the app boundary.
 
 <div class="info" data-title="The one-line mental model">
 
@@ -224,7 +174,7 @@ flowchart LR
 
 ## What you'll learn
 
-**In Part 1** — how each vulnerability is actually exploited, hands-on, through the chat UI.
+**In Part 1** — how each vulnerability is actually exploited or observed, hands-on, through the chat UI, code, config, or tests.
 
 **In Part 2** — how to shut each one down with a named Azure security layer:
 
@@ -232,7 +182,7 @@ flowchart LR
 |---|---|---|
 | **Foundry model + agent guardrails** (Content Safety, Prompt Shields, Groundedness) | V1 ungoverned model, V2 no guardrails, V6 data poisoning | 1, 2, 8 |
 | **PII detection & redaction** (Azure AI Language) | V3 PII leakage | 3 |
-| **Tool least-privilege + secure MCP through Foundry + HITL + sandboxed code** | V4 overpermissioned tools, V8 unsafe code, V9 insecure MCP | 4 |
+| **Tool least-privilege + secure MCP through Foundry + HITL + sandboxed code + inter-agent guard** | V4 overpermissioned tools, V8 unsafe code, V9 insecure MCP, V11 agent-to-agent poisoning | 4 |
 | **Entra ID** (OBO/RBAC/Key Vault) + **AI Search document-level security** | V5 broken identity | 5 |
 | **APIM AI gateway** (observability, token rate limiting, key vaulting) + **Defender for Cloud** (attack & insecure-code detection) | V7 insecure infrastructure, V10 no AI gateway | 6 |
 | **Microsoft Purview** DSPM + **DLP for AI** | V3 PII leakage, V6 data poisoning | 7 |
@@ -303,15 +253,20 @@ Zava ships its assistant fast and insecure. The orchestrator routes each user tu
 
 ### 1 · Set up locally
 
-```bash
+```powershell
+# Windows PowerShell
 python -m venv .venv
-# Windows
 .\.venv\Scripts\Activate.ps1
-# macOS/Linux
-# source .venv/bin/activate
-
 pip install -r requirements.txt
-cp .env.example .env          # OFFLINE_MODE=true, SECURE_MODE=false by default
+Copy-Item .env.example .env
+```
+
+```bash
+# macOS/Linux
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
 ```
 
 Install **Foundry Local** and pull a small model so the app runs against a real SLM (free, local):
@@ -348,7 +303,7 @@ The posture panel lists every security control — all disabled in the baseline 
 
 ### 2 · Exploit it — the guided break-in
 
-Open the chat UI at `http://localhost:8000` and run each attack below. Every one **succeeds** on the vulnerable baseline. This is the "before" you'll close in Part 2.
+Open the chat UI at `http://localhost:8000` and run each attack below. Most are one-click exploit buttons in the UI; V7/V9/V10 are observed through code, config, or tests because their trust boundaries are outside a single chat turn. This is the "before" you'll close in Part 2.
 
 | # | Vulnerability | Try this in the chat UI | What you'll see |
 |---|---|---|---|
@@ -439,7 +394,7 @@ python -m src.scripts.seed   # seed Postgres + upload sample docs (incl. one poi
 | 1 | **Foundry** model + agent guardrails — Content Safety | V1 ungoverned model, V2 no guardrails |
 | 2 | **Foundry** Prompt Shields (direct + indirect injection) | V2 no guardrails, V6 data poisoning |
 | 3 | **Azure AI Language** PII detection & redaction | V3 PII leakage |
-| 4 | **Secure MCP through Foundry** + tool least-privilege + HITL + sandboxed code | V4 overpermissioned tools, V8 unsafe code, V9 insecure MCP |
+| 4 | **Secure MCP through Foundry** + tool least-privilege + HITL + sandboxed code + inter-agent guard | V4 overpermissioned tools, V8 unsafe code, V9 insecure MCP, V11 agent-to-agent poisoning |
 | 5 | **Entra ID** (OBO/RBAC/Key Vault) + **AI Search** document-level security | V5 broken identity |
 | 6 | **APIM AI gateway** (observability, rate limiting) + **Defender for Cloud** | V7 insecure infrastructure, V10 no AI gateway |
 | 7 | **Microsoft Purview** DSPM + **DLP for AI** | V3 PII leakage, V6 data poisoning |

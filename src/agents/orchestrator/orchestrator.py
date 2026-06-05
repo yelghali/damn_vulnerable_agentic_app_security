@@ -37,6 +37,8 @@ logger = logging.getLogger("zava.orchestrator")
 
 def _route(message: str) -> str:
     low = message.lower()
+    if any(k in low for k in ("system prompt", "your instructions", "admin override")):
+        return "orchestrator"
     if any(k in low for k in ("transfer", "send", "email", "statement", "pay")):
         return "transactions"
     if any(k in low for k in ("report", "summary", "chart", "summarize")):
@@ -98,7 +100,12 @@ def handle_turn(message: str, ctx: AgentContext) -> TurnResult:
     # 2. ROUTE + 3. RUN -----------------------------------------------------
     route = _route(message)
     events.append(f"orchestrator: routed to '{route}' agent")
-    if route == "accounts":
+    if route == "orchestrator":
+        result = TurnResult(
+            answer=compose_answer(load_system_prompt(), message),
+            agent="orchestrator",
+        )
+    elif route == "accounts":
         result = accounts_agent.run(message, ctx)
     elif route == "transactions":
         result = transactions_agent.run(message, ctx)
