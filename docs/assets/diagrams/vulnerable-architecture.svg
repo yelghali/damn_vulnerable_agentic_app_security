@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">Zava vulnerable baseline architecture</title>
+  <desc id="desc">The vulnerable local baseline: browser chat calls the FastAPI multi-agent app directly. The app calls a local model, local document search, and local SQLite/PostgreSQL-style data tools with no Azure security services, gateway, identity, guardrails, or monitoring.</desc>
+  <style>
+    .bg{fill:#fff7ed}.panel{fill:#fff;stroke:#fed7aa;stroke-width:2;rx:8}.box{fill:#fef3c7;stroke:#d97706;stroke-width:2;rx:7}.agent{fill:#fffbeb;stroke:#f59e0b;stroke-width:1.5;rx:6}.data{fill:#f1f5f9;stroke:#64748b;stroke-width:1.7;rx:7}.warn{fill:#fee2e2;stroke:#dc2626;stroke-width:1.7;rx:7}.h{font:700 22px Segoe UI,Arial,sans-serif;fill:#7c2d12}.t{font:500 14px Segoe UI,Arial,sans-serif;fill:#334155}.s{font:600 13px Segoe UI,Arial,sans-serif;fill:#475569}.w{font:700 13px Segoe UI,Arial,sans-serif;fill:#991b1b}.arrow{stroke:#92400e;stroke-width:2.2;fill:none;marker-end:url(#arrow)}.dash{stroke:#dc2626;stroke-width:2;stroke-dasharray:7 6;fill:none}.small{font:500 12px Segoe UI,Arial,sans-serif;fill:#64748b}
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#92400e"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="520"/>
+  <text class="h" x="34" y="42">Part 1 vulnerable baseline: direct calls, local data, no security layers</text>
+  <text class="t" x="34" y="68">This is what learners run and break locally before adding Azure controls. Every red callout is a missing security component.</text>
+
+  <rect class="box" x="36" y="152" width="132" height="66"/>
+  <text class="s" x="68" y="181">Browser</text>
+  <text class="small" x="58" y="201">Chat UI</text>
+  <path class="arrow" d="M168 185h72"/>
+
+  <rect class="box" x="240" y="128" width="230" height="114"/>
+  <text class="s" x="292" y="162">FastAPI backend</text>
+  <text class="small" x="267" y="184">trusts request body identity</text>
+  <text class="small" x="277" y="204">calls tools directly</text>
+
+  <path class="arrow" d="M470 185h60"/>
+  <rect class="panel" x="530" y="82" width="360" height="206"/>
+  <text class="s" x="642" y="112">Multi-agent app</text>
+  <rect class="agent" x="556" y="135" width="134" height="46"/><text class="small" x="582" y="163">Orchestrator</text>
+  <rect class="agent" x="710" y="135" width="134" height="46"/><text class="small" x="752" y="163">Knowledge</text>
+  <rect class="agent" x="556" y="202" width="92" height="46"/><text class="small" x="577" y="230">Accounts</text>
+  <rect class="agent" x="662" y="202" width="102" height="46"/><text class="small" x="678" y="230">Transactions</text>
+  <rect class="agent" x="778" y="202" width="86" height="46"/><text class="small" x="797" y="230">Reports</text>
+
+  <path class="arrow" d="M710 288v54"/>
+  <rect class="data" x="548" y="342" width="150" height="62"/>
+  <text class="s" x="586" y="370">Local SLM</text>
+  <text class="small" x="576" y="390">or stub fallback</text>
+  <rect class="data" x="724" y="342" width="150" height="62"/>
+  <text class="s" x="760" y="370">Local docs</text>
+  <text class="small" x="747" y="390">markdown search</text>
+  <rect class="data" x="900" y="342" width="176" height="62"/>
+  <text class="s" x="946" y="370">Local DB</text>
+  <text class="small" x="928" y="390">SQLite seed / admin-like tools</text>
+  <path class="arrow" d="M742 248l-95 90"/>
+  <path class="arrow" d="M784 248l15 90"/>
+  <path class="arrow" d="M838 248l117 90"/>
+
+  <rect class="warn" x="922" y="104" width="220" height="178"/>
+  <text class="w" x="952" y="132">Missing in baseline</text>
+  <text class="small" x="946" y="158">No Entra / OBO</text>
+  <text class="small" x="946" y="181">No APIM gateway</text>
+  <text class="small" x="946" y="204">No Foundry guardrails</text>
+  <text class="small" x="946" y="227">No Search ACL trimming</text>
+  <text class="small" x="946" y="250">No RLS / MCP allow-list</text>
+  <text class="small" x="946" y="273">No Purview / Monitor</text>
+  <path class="dash" d="M918 294h224"/>
+  <text class="small" x="945" y="316">Part 2 adds these layers.</text>
+</svg>

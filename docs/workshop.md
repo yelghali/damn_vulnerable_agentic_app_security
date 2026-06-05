@@ -153,7 +153,17 @@ Every module banner and the final reference table also tag each weakness with a 
 
 ## Architecture at a glance
 
-Zava is a **multi-agent app** — an **Orchestrator** that routes each request to **four specialist agents** (Accounts, Transactions, Knowledge/RAG, Reporting), so **five agents in total** — wrapped, in Part 2, by **layers of Azure security controls**. Read this one picture and the whole lab clicks into place: every vulnerability **Vn** (defined in the table just above) is just a missing control at one specific point in the request path.
+Zava is a **multi-agent app** — an **Orchestrator** that routes each request to **four specialist agents** (Accounts, Transactions, Knowledge/RAG, Reporting), so **five agents in total**. The lab starts with the local vulnerable baseline, then Part 2 wraps the same app with Azure security controls.
+
+### Vulnerable baseline — Part 1
+
+In Part 1, the browser talks directly to the FastAPI multi-agent app. The app uses local documents/search and a local SQLite data store, and there are no platform security layers: no Entra identity, no APIM gateway, no Foundry guardrails, no document ACL trimming, no Postgres RLS/MCP scoping, and no enterprise data governance.
+
+![Zava vulnerable baseline architecture: browser chat calls the FastAPI multi-agent app directly, which calls a local model, local markdown search, and a local SQLite database. Red callouts list the missing security services: Entra, APIM, Foundry guardrails, AI Search ACLs, RLS/MCP scoping, Purview, and monitoring.](assets/diagrams/vulnerable-architecture.svg)
+
+### Secure target — Part 2
+
+In Part 2, the same request path is protected by Azure controls. Read this picture as the secure target: every vulnerability **Vn** is a missing control at one specific point in the path, and each module adds one layer back.
 
 ![Zava architecture: a request flows from the client through APIM, Entra ID, guardrails, the multi-agent app, tools and data services, then back through output controls. The draw.io diagram labels the V1-V11 controls and the Azure services that enforce them.](assets/diagrams/architecture.drawio.svg)
 
@@ -164,39 +174,11 @@ Open [assets/diagrams/architecture.drawio](assets/diagrams/architecture.drawio) 
 
 </details>
 
-**How to read it:** a request flows **left → right** through the platform edge, input guards, agents, tools/data services, and output controls. In the **vulnerable baseline every security-control box is missing**. Part 2 adds them back one layer at a time, including the V11 agent-to-agent guard inside the app boundary.
+**How to read it:** a request flows **left → right** through the platform edge, input guards, agents, tools/data services, and output controls. Part 2 adds those controls one layer at a time, including the V11 agent-to-agent guard inside the app boundary.
 
 <div class="info" data-title="The one-line mental model">
 
 > **Identity at the edge → guard the input → least-privilege in the middle → guard the output → observe everything.** Every module below is one of those five moves.
-
-</div>
-
-### Control placement: where the guard actually happens
-
-The same word, "guardrail," appears in three places in this lab. This mini-flow shows the enforcement point for each one so you know whether you are changing a **system prompt**, an **app/API guard**, a **Foundry endpoint policy**, or an **identity-scoped data/tool boundary**.
-
-![A compact request-flow diagram showing Entra identity at the edge, APIM gateway controls, in-app system prompt and boundary guards, Foundry model deployment RAI policy and agent guardrails, and scoped tools/data services.](assets/diagrams/guardrail-flow.svg)
-
-| Guard location | Example control | Added by | Actually implemented where |
-|---|---|---|---|
-| **System prompt** | Finance-only scope, no prompt/config leakage | Module 1 / 3 | [src/agents/prompts/secure/orchestrator.md](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/prompts/secure/orchestrator.md) |
-| **Foundry model deployment** | Content filters, Prompt Shields, Protected Material | Modules 1 / 2 | [src/infra/foundry.tf](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/infra/foundry.tf) RAI policy attached to `gpt-governed` |
-| **Foundry agent guardrail** | Per-agent stricter guardrail / groundedness | Modules 1 / 8 | Azure portal or Foundry SDK; default inheritance is shown in the portal |
-| **App/API guard** | PII redaction, per-document Prompt Shields call, tool/MCP output re-scan, agent-to-agent handoff scan | Modules 2 / 3 / 4 / 8 | [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py), [src/agents/knowledge/agent.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/knowledge/agent.py) |
-| **Identity-scoped tools/data** | Entra OBO, Postgres RLS, AI Search ACL trimming, MCP allow-list | Modules 4 / 5 | [src/agents/tools/db.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/db.py), [src/agents/tools/search.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/search.py), [src/agents/tools/mcp.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/mcp.py) |
-
-### Security module mini-flows
-
-Use this compact diagram as the module map: it shows the exact service boundary each lesson manipulates, from Foundry guardrails to Entra, APIM, Search, PostgreSQL/MCP, Purview, evaluations, and red teaming.
-
-![Eleven compact module flows showing the enforcement boundary for each security module: Foundry RAI, Prompt Shields, AI Language PII, MCP/Postgres RLS, Entra and AI Search ACLs, APIM and Defender, AGT, Groundedness, evaluations, Purview, and AI red teaming.](assets/diagrams/security-module-flows.svg)
-
-<div class="important" data-title="Are guardrails and Prompt Shields actually added through code?">
-
-> **Yes, but at two different layers.** The production-grade, unavoidable control is added through **infrastructure code**: [src/infra/foundry.tf](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/infra/foundry.tf) creates a `governed` RAI policy with harmful-content filters, `Jailbreak`, `Indirect Attack`, and Protected Material, then attaches it to the Foundry model deployment. The app also has **runtime code** in [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py): when a security toggle is enabled it must call the real Azure AI Content Safety `text:analyze`, `text:shieldPrompt`, Groundedness, or Azure AI Language PII API. Missing Azure configuration fails closed with a setup error; secure checks do not fall back to local regex or keyword heuristics.
->
-> The portal path is an **alternative way to apply or inspect the same platform controls**, not a separate hidden requirement. Use it when teaching or validating: Foundry project → **Guardrails + controls** → **Content filters** → create/inspect the filter, then **Models + endpoints** → `gpt-governed` → confirm the filter is attached. For agent-specific controls, open an agent's **Build** page → **Guardrail (Preview)** → **Manage guardrail**.
 
 </div>
 
@@ -408,6 +390,34 @@ Every test asserts **both** the vulnerable behavior (toggle off) **and** the sec
 > ⏱️ Core (Modules 1–6) ~4 h · Extended (Modules 7–11 + capstone) +2–3 h
 
 Now harden the same app. Each module adds **one named Azure security layer** over the vulnerable baseline and you re-run a Part 1 exploit to confirm it's dead.
+
+### Control placement: where the guard actually happens
+
+The same word, "guardrail," appears in three places in this lab. This mini-flow shows the enforcement point for each one so you know whether you are changing a **system prompt**, an **app/API guard**, a **Foundry endpoint policy**, or an **identity-scoped data/tool boundary**.
+
+![A compact request-flow diagram showing Entra identity at the edge, APIM gateway controls, in-app system prompt and boundary guards, Foundry model deployment RAI policy and agent guardrails, and scoped tools/data services.](assets/diagrams/guardrail-flow.svg)
+
+| Guard location | Example control | Added by | Actually implemented where |
+|---|---|---|---|
+| **System prompt** | Finance-only scope, no prompt/config leakage | Module 1 / 3 | [src/agents/prompts/secure/orchestrator.md](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/prompts/secure/orchestrator.md) |
+| **Foundry model deployment** | Content filters, Prompt Shields, Protected Material | Modules 1 / 2 | [src/infra/foundry.tf](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/infra/foundry.tf) RAI policy attached to `gpt-governed` |
+| **Foundry agent guardrail** | Per-agent stricter guardrail / groundedness | Modules 1 / 8 | Azure portal or Foundry SDK; default inheritance is shown in the portal |
+| **App/API guard** | PII redaction, per-document Prompt Shields call, tool/MCP output re-scan, agent-to-agent handoff scan | Modules 2 / 3 / 4 / 8 | [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py), [src/agents/knowledge/agent.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/knowledge/agent.py) |
+| **Identity-scoped tools/data** | Entra OBO, Postgres RLS, AI Search ACL trimming, MCP allow-list | Modules 4 / 5 | [src/agents/tools/db.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/db.py), [src/agents/tools/search.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/search.py), [src/agents/tools/mcp.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/mcp.py) |
+
+### Security module mini-flows
+
+Use this compact diagram as the module map: it shows the exact service boundary each lesson manipulates, from Foundry guardrails to Entra, APIM, Search, PostgreSQL/MCP, Purview, evaluations, and red teaming.
+
+![Eleven compact module flows showing the enforcement boundary for each security module: Foundry RAI, Prompt Shields, AI Language PII, MCP/Postgres RLS, Entra and AI Search ACLs, APIM and Defender, AGT, Groundedness, evaluations, Purview, and AI red teaming.](assets/diagrams/security-module-flows.svg)
+
+<div class="important" data-title="Are guardrails and Prompt Shields actually added through code?">
+
+> **Yes, but at two different layers.** The production-grade, unavoidable control is added through **infrastructure code**: [src/infra/foundry.tf](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/infra/foundry.tf) creates a `governed` RAI policy with harmful-content filters, `Jailbreak`, `Indirect Attack`, and Protected Material, then attaches it to the Foundry model deployment. The app also has **runtime code** in [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py): when a security toggle is enabled it must call the real Azure AI Content Safety `text:analyze`, `text:shieldPrompt`, Groundedness, or Azure AI Language PII API. Missing Azure configuration fails closed with a setup error; secure checks do not fall back to local regex or keyword heuristics.
+>
+> The portal path is an **alternative way to apply or inspect the same platform controls**, not a separate hidden requirement. Use it when teaching or validating: Foundry project → **Guardrails + controls** → **Content filters** → create/inspect the filter, then **Models + endpoints** → `gpt-governed` → confirm the filter is attached. For agent-specific controls, open an agent's **Build** page → **Guardrail (Preview)** → **Manage guardrail**.
+
+</div>
 
 If you are teaching a group where some participants cannot run the app locally, deploy the vulnerable web UI to Azure Container Apps first. Build and push the app image, then pass it to Terraform:
 
