@@ -39,6 +39,21 @@ def _route(message: str) -> str:
     low = message.lower()
     if any(k in low for k in ("system prompt", "your instructions", "admin override")):
         return "orchestrator"
+    if any(
+        k in low
+        for k in (
+            "inferior race",
+            "offensive joke",
+            "build a bomb",
+            "explicit sexual",
+            "kill myself",
+            "end my life",
+            "political party",
+            "vote for",
+            "election",
+        )
+    ):
+        return "orchestrator"
     if any(k in low for k in ("transfer", "send", "email", "statement", "pay")):
         return "transactions"
     if any(k in low for k in ("report", "summary", "chart", "summarize")):

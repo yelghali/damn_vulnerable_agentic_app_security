@@ -178,6 +178,14 @@ resource "azurerm_container_app" "zava_app" {
         value = var.enable_ungoverned_model ? azurerm_cognitive_deployment.ungoverned[0].name : azurerm_cognitive_deployment.governed.name
       }
       env {
+        name  = "CONTENT_SAFETY_ENDPOINT"
+        value = azurerm_cognitive_account.ai.endpoint
+      }
+      env {
+        name  = "LANGUAGE_ENDPOINT"
+        value = azurerm_cognitive_account.ai.endpoint
+      }
+      env {
         name  = "SEARCH_ENDPOINT"
         value = "https://${azurerm_search_service.search.name}.search.windows.net"
       }
@@ -192,6 +200,14 @@ resource "azurerm_container_app" "zava_app" {
       env {
         name  = "AI_GATEWAY_URL"
         value = var.deploy_apim ? azurerm_api_management.gw[0].gateway_url : ""
+      }
+      env {
+        name  = "VULNERABLE_APP_URL"
+        value = var.vulnerable_app_url
+      }
+      env {
+        name  = "SECURE_APP_URL"
+        value = var.secure_app_url
       }
       env {
         name        = "PG_ADMIN_CONNECTION"
@@ -224,6 +240,13 @@ resource "azurerm_role_assignment" "app_to_foundry" {
   count                = var.deploy_app && !var.app_offline_mode ? 1 : 0
   scope                = azurerm_cognitive_account.ai.id
   role_definition_name = "Cognitive Services OpenAI User"
+  principal_id         = azurerm_container_app.zava_app[0].identity[0].principal_id
+}
+
+resource "azurerm_role_assignment" "app_to_ai_services" {
+  count                = var.deploy_app && !var.app_offline_mode ? 1 : 0
+  scope                = azurerm_cognitive_account.ai.id
+  role_definition_name = "Cognitive Services User"
   principal_id         = azurerm_container_app.zava_app[0].identity[0].principal_id
 }
 
@@ -308,6 +331,14 @@ resource "azurerm_container_app" "zava_user_app" {
         value = var.enable_ungoverned_model ? azurerm_cognitive_deployment.ungoverned[0].name : azurerm_cognitive_deployment.governed.name
       }
       env {
+        name  = "CONTENT_SAFETY_ENDPOINT"
+        value = azurerm_cognitive_account.ai.endpoint
+      }
+      env {
+        name  = "LANGUAGE_ENDPOINT"
+        value = azurerm_cognitive_account.ai.endpoint
+      }
+      env {
         name  = "SEARCH_ENDPOINT"
         value = "https://${azurerm_search_service.search.name}.search.windows.net"
       }
@@ -322,6 +353,14 @@ resource "azurerm_container_app" "zava_user_app" {
       env {
         name  = "AI_GATEWAY_URL"
         value = var.deploy_apim ? "${azurerm_api_management.gw[0].gateway_url}/${each.value.safe_id}" : ""
+      }
+      env {
+        name  = "VULNERABLE_APP_URL"
+        value = var.vulnerable_app_url
+      }
+      env {
+        name  = "SECURE_APP_URL"
+        value = var.secure_app_url
       }
       env {
         name  = "DEFAULT_CUSTOMER_ID"
@@ -358,6 +397,13 @@ resource "azurerm_role_assignment" "cohort_app_to_foundry" {
   for_each             = var.deploy_app && var.deploy_cohort_apps && !var.app_offline_mode ? local.cohort_user_map : {}
   scope                = azurerm_cognitive_account.ai.id
   role_definition_name = "Cognitive Services OpenAI User"
+  principal_id         = azurerm_container_app.zava_user_app[each.key].identity[0].principal_id
+}
+
+resource "azurerm_role_assignment" "cohort_app_to_ai_services" {
+  for_each             = var.deploy_app && var.deploy_cohort_apps && !var.app_offline_mode ? local.cohort_user_map : {}
+  scope                = azurerm_cognitive_account.ai.id
+  role_definition_name = "Cognitive Services User"
   principal_id         = azurerm_container_app.zava_user_app[each.key].identity[0].principal_id
 }
 

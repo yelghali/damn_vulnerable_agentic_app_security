@@ -22,6 +22,8 @@ const TOGGLE_LABELS = {
   a2a_guard: "Agent-to-agent guard (V11)",
 };
 
+let currentIdentity = null;
+
 // --- One-click exploit + benign prompts -------------------------------------
 const EXPLOITS = [
   // Content Safety — the four Azure harm categories, each a SEPARATE aspect (V1)
@@ -145,6 +147,35 @@ async function send(message, approved) {
   else hideApproval();
 }
 
+// --- Identity ---------------------------------------------------------------
+function renderIdentity(info) {
+  currentIdentity = info;
+  const box = $("identity-details");
+  if (!box) return;
+  const groups = (info.zava_groups && info.zava_groups.length ? info.zava_groups : info.groups || []).join(", ") || "none";
+  box.innerHTML = `
+    <div><b>${info.authenticated ? (info.name || "Authenticated user") : "Local / spoofable identity"}</b></div>
+    <div>source: ${info.auth_source}</div>
+    <div>customer: ${info.customer_id || "n/a"}</div>
+    <div>Zava groups: ${groups}</div>
+    <div>JWT/API token: ${info.token_present ? "available" : "not available"}</div>
+  `;
+}
+
+async function loadIdentity(includeToken = false) {
+  try {
+    const info = await (await fetch(`/api/me${includeToken ? "?include_token=true" : ""}`)).json();
+    renderIdentity(info);
+    const tokenBox = $("token-box");
+    if (tokenBox && includeToken) {
+      tokenBox.style.display = "block";
+      tokenBox.textContent = JSON.stringify({ token: info.token, header: info.token_header, payload: info.token_payload }, null, 2);
+    }
+  } catch {
+    renderIdentity({ authenticated: false, auth_source: "unavailable", groups: [], zava_groups: [], token_present: false });
+  }
+}
+
 // --- Security posture --------------------------------------------------------
 async function loadPosture() {
   let cfg;
@@ -160,6 +191,16 @@ async function loadPosture() {
     ? 'Mode: <span class="secure-badge">SECURE (answer key)</span>'
     : 'Mode: <span class="vuln-badge">VULNERABLE baseline</span>' +
       (cfg.offline_mode ? " · offline" : "");
+  sub.innerHTML += ` · model: ${cfg.model_backend || "unknown"}`;
+  if (cfg.allow_stub_model) sub.innerHTML += ' · <span class="vuln-badge">stub allowed</span>';
+
+  const switchBox = $("mode-switch");
+  if (switchBox) {
+    const links = [];
+    if (cfg.vulnerable_app_url) links.push(`<a href="${cfg.vulnerable_app_url}">Open vulnerable app</a>`);
+    if (cfg.secure_app_url) links.push(`<a href="${cfg.secure_app_url}">Open secure app</a>`);
+    switchBox.innerHTML = links.length ? links.join(" · ") : "No paired app URLs configured.";
+  }
 
   const box = $("toggles");
   box.innerHTML = "";
@@ -215,4 +256,6 @@ $("deny-btn").addEventListener("click", () => {
 
 renderChips();
 loadPosture();
+loadIdentity();
+$("reveal-token-btn")?.addEventListener("click", () => loadIdentity(true));
 addMsg("Hi! I'm the Zava Wealth Advisor. Ask about your accounts, transactions, or documents — or try one of the exploit buttons on the right to see the current security posture in action.", "bot");

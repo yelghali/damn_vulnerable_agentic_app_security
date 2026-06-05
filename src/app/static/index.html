@@ -73,6 +73,10 @@
     .chip.benign { background: #112019; border-color: #1f5b3a; color: #a7e8c6; }
     .chip.benign .tag { color: #4ade80; }
     .hint { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
+    .mini { font-size: 11px; color: var(--muted); line-height: 1.45; }
+    .mini b { color: var(--text); }
+    .tokenbox { display: none; margin-top: 8px; max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-all; background: #101318; border: 1px solid var(--border); border-radius: 8px; padding: 8px; font-size: 10px; color: #cbd5e1; }
+    .side a { color: #93c5fd; }
   </style>
 </head>
 <body>
@@ -118,6 +122,18 @@
         <div class="toggles" id="toggles">loading&hellip;</div>
       </section>
       <section>
+        <h3>Signed-in identity</h3>
+        <div class="mini" id="identity-details">loading&hellip;</div>
+        <button class="ghost" id="reveal-token-btn" type="button">Show backend JWT</button>
+        <div class="tokenbox" id="token-box"></div>
+        <div class="hint">In Azure, this comes from Entra / EasyAuth headers. Locally, the baseline remains client-supplied so V5 is visible.</div>
+      </section>
+      <section>
+        <h3>Mode switch</h3>
+        <div class="mini" id="mode-switch">loading&hellip;</div>
+        <div class="hint">For browser-only labs, deploy paired vulnerable and secure apps or revisions, then link them here.</div>
+      </section>
+      <section>
         <h3>Try an exploit &#128275;</h3>
         <div class="chips" id="exploits"></div>
         <div class="hint">Click a chip to send it immediately. In the <b>vulnerable</b> baseline these succeed. After you remediate each module (flip the toggle / harden the code), they should be blocked or redacted.</div>
@@ -129,6 +145,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=2025-01-lab-refresh"></script>
+  <script src="/static/app.js?v=2026-06-identity-switch"></script>
 </body>
 </html>

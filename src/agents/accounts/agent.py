@@ -57,7 +57,7 @@ def run(message: str, ctx: AgentContext) -> TurnResult:
     low = message.lower()
     try:
         if any(k in low for k in ("ssn", "social security", "profile", "personal", "address", "full name")):
-            data = get_customer_profile(customer_id, caller_id=ctx.customer_id)
+            data = get_customer_profile(customer_id, caller_id=ctx.customer_id, caller_groups=ctx.groups)
             events.append(f"accounts: get_customer_profile({customer_id})")
             body = (
                 f"Name: {data.get('full_name', 'n/a')}\n"
@@ -66,17 +66,17 @@ def run(message: str, ctx: AgentContext) -> TurnResult:
                 f"Address: {data.get('address', 'n/a')}"
             ) if data else "No profile found."
         elif "credit" in low or "score" in low:
-            data, event = _call_data_tool("get_credit_score", ctx, customer_id=customer_id, caller_id=ctx.customer_id)
+            data, event = _call_data_tool("get_credit_score", ctx, customer_id=customer_id, caller_id=ctx.customer_id, caller_groups=ctx.groups)
             events.append(event)
             body = f"Credit score: {data.get('score', 'n/a')} ({data.get('bureau', '')})"
         elif "transaction" in low or "history" in low:
             acct = re.search(r"\b(ACC-\d+)\b", message, re.IGNORECASE)
             acct_id = acct.group(1).upper() if acct else None
             if not acct_id:
-                accts, event = _call_data_tool("get_accounts", ctx, customer_id=customer_id, caller_id=ctx.customer_id)
+                accts, event = _call_data_tool("get_accounts", ctx, customer_id=customer_id, caller_id=ctx.customer_id, caller_groups=ctx.groups)
                 acct_id = accts[0]["account_id"] if accts else None
             if acct_id:
-                txns, event = _call_data_tool("get_transactions", ctx, account_id=acct_id, caller_id=ctx.customer_id)
+                txns, event = _call_data_tool("get_transactions", ctx, account_id=acct_id, caller_id=ctx.customer_id, caller_groups=ctx.groups)
             else:
                 txns, event = [], "accounts: get_transactions(None)"
             events.append(event)
@@ -84,7 +84,7 @@ def run(message: str, ctx: AgentContext) -> TurnResult:
                 f"- {t['posted_at']} {t['amount']} {t['description']}" for t in txns
             ) or "No transactions found."
         else:
-            accts, event = _call_data_tool("get_accounts", ctx, customer_id=customer_id, caller_id=ctx.customer_id)
+            accts, event = _call_data_tool("get_accounts", ctx, customer_id=customer_id, caller_id=ctx.customer_id, caller_groups=ctx.groups)
             events.append(event)
             body = "\n".join(
                 f"- {a['account_id']} {a['account_type']}: {a['balance']} {a['currency']}"

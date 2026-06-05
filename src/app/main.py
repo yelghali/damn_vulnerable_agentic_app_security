@@ -12,10 +12,13 @@ On-Behalf-Of flow so identity comes from a validated token, not the request body
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -46,9 +49,120 @@ class ChatResponse(BaseModel):
     sources: list[dict]
 
 
+class IdentityInfo(BaseModel):
+    authenticated: bool
+    name: str | None = None
+    user_id: str | None = None
+    customer_id: str | None = None
+    groups: list[str] = []
+    zava_groups: list[str] = []
+    auth_source: str
+    token_present: bool = False
+    token: str | None = None
+    token_header: dict[str, Any] | None = None
+    token_payload: dict[str, Any] | None = None
+
+
+_ZAVA_GROUPS = {"retail-customers", "private-client", "zava-admins"}
+
+
+def _decode_base64_json(value: str) -> dict[str, Any] | None:
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        return json.loads(base64.b64decode(padded).decode("utf-8"))
+    except Exception:  # noqa: BLE001 - identity headers are optional lab inputs
+        return None
+
+
+def _decode_jwt_part(part: str) -> dict[str, Any] | None:
+    try:
+        padded = part + "=" * (-len(part) % 4)
+        return json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+    except Exception:  # noqa: BLE001 - show best-effort lab token details
+        return None
+
+
+def _jwt_details(token: str | None) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    if not token or token.count(".") < 2:
+        return None, None
+    header, payload, *_ = token.split(".")
+    return _decode_jwt_part(header), _decode_jwt_part(payload)
+
+
+def _customer_from_user_id(user_id: str | None, default_customer_id: str) -> str:
+    if user_id and user_id.startswith("user_"):
+        try:
+            return f"CUST-{1000 + int(user_id.split('_', 1)[1])}"
+        except ValueError:
+            pass
+    return default_customer_id
+
+
+def _identity_from_request(request: Request, req: ChatRequest | None = None, include_token: bool = False) -> IdentityInfo:
+    settings = get_settings()
+    headers = request.headers
+    principal_name = headers.get("x-ms-client-principal-name")
+    principal_id = headers.get("x-ms-client-principal-id")
+    groups: list[str] = []
+    source = "client-supplied"
+
+    encoded_principal = headers.get("x-ms-client-principal")
+    if encoded_principal:
+        principal = _decode_base64_json(encoded_principal) or {}
+        principal_name = principal_name or principal.get("userDetails")
+        principal_id = principal_id or principal.get("userId")
+        source = "azure-easyauth"
+        for claim in principal.get("claims", []):
+            claim_type = str(claim.get("typ", "")).lower()
+            value = str(claim.get("val", ""))
+            if claim_type.endswith("/groups") or claim_type in {"groups", "roles", "role"}:
+                groups.append(value)
+
+    token = headers.get("x-ms-token-aad-access-token") or headers.get("authorization", "").removeprefix("Bearer ")
+    token_header, token_payload = _jwt_details(token)
+    if token_payload:
+        principal_name = principal_name or token_payload.get("preferred_username") or token_payload.get("upn") or token_payload.get("email")
+        principal_id = principal_id or token_payload.get("oid") or token_payload.get("sub")
+        source = "jwt" if source == "client-supplied" else source
+        token_groups = token_payload.get("groups") or token_payload.get("roles") or []
+        if isinstance(token_groups, str):
+            groups.append(token_groups)
+        elif isinstance(token_groups, list):
+            groups.extend(str(group) for group in token_groups)
+
+    if not groups and req is not None:
+        groups = list(req.groups)
+    groups = sorted({group for group in groups if group})
+    zava_groups = sorted(group for group in groups if group in _ZAVA_GROUPS)
+    upn = principal_name or ""
+    user_id = upn.split("@", 1)[0] if upn else None
+    if "zava-admins" in zava_groups:
+        user_id = user_id or "admin"
+    customer_id = _customer_from_user_id(user_id, req.customer_id if req and req.customer_id else settings.default_customer_id)
+
+    return IdentityInfo(
+        authenticated=bool(principal_name or principal_id or token_payload),
+        name=principal_name,
+        user_id=user_id,
+        customer_id=customer_id,
+        groups=groups,
+        zava_groups=zava_groups,
+        auth_source=source,
+        token_present=bool(token),
+        token=token if include_token and token else None,
+        token_header=token_header if include_token else None,
+        token_payload=token_payload if include_token else None,
+    )
+
+
 @app.get("/api/config")
 def config() -> dict:
     return get_settings().summary()
+
+
+@app.get("/api/me", response_model=IdentityInfo)
+def me(request: Request, include_token: bool = False) -> IdentityInfo:
+    return _identity_from_request(request, include_token=include_token)
 
 
 def format_error(exc: Exception) -> str:
@@ -64,12 +178,20 @@ def format_error(exc: Exception) -> str:
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(req: ChatRequest) -> ChatResponse:
+def chat(req: ChatRequest, request: Request) -> ChatResponse:
     settings = get_settings()
-    customer_id = req.customer_id or settings.default_customer_id
+    identity = _identity_from_request(request, req=req)
+    if settings.enable_obo and not identity.authenticated:
+        return ChatResponse(
+            answer="Authentication required: secure identity/OBO mode needs a validated Entra login.",
+            agent="orchestrator", events=["identity: missing validated Entra principal"],
+            blocked=True, requires_approval=None, sources=[],
+        )
+    customer_id = identity.customer_id if settings.enable_obo else (req.customer_id or settings.default_customer_id)
+    groups = identity.zava_groups or identity.groups if settings.enable_obo else req.groups
     ctx = AgentContext(
         customer_id=customer_id,
-        groups=req.groups,
+        groups=groups,
         approved_action=req.approved_action,
     )
     try:

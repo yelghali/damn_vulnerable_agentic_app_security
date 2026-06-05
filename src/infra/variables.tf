@@ -199,6 +199,18 @@ variable "app_offline_mode" {
   description = "true = browser-accessible vulnerable baseline with container-local SQLite/stub fallback. false = app calls Azure Foundry/PostgreSQL/MCP/APIM using the env below."
 }
 
+variable "vulnerable_app_url" {
+  type        = string
+  default     = ""
+  description = "Optional URL for the vulnerable app variant. Surfaced in the UI mode switch for browser-only learners."
+}
+
+variable "secure_app_url" {
+  type        = string
+  default     = ""
+  description = "Optional URL for the secure app variant. Surfaced in the UI mode switch for browser-only learners."
+}
+
 variable "pg_app_user" {
   type        = string
   default     = "zava_app_ro"

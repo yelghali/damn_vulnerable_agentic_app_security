@@ -25,7 +25,7 @@ def _resolve_account(text: str, ctx: AgentContext) -> str | None:
         return m.group(0).upper()
     for kind in ("checking", "savings"):
         if kind in low:
-            for a in get_accounts(ctx.customer_id or "", caller_id=ctx.customer_id):
+            for a in get_accounts(ctx.customer_id or "", caller_id=ctx.customer_id, caller_groups=ctx.groups):
                 if a["account_type"] == kind:
                     return a["account_id"]
             return None
@@ -86,6 +86,7 @@ def run(message: str, ctx: AgentContext) -> TurnResult:
                 action["to_account"],
                 action["amount"],
                 caller_id=ctx.customer_id,
+                caller_groups=ctx.groups,
                 approved=bool(ctx.approved_action),
             )
             events.append(f"transactions: transfer_funds executed -> {result['status']}")

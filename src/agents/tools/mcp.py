@@ -71,6 +71,11 @@ def allowed_tools() -> set[str]:
     return {t.strip() for t in raw.split(",") if t.strip()}
 
 
+def _is_admin(ctx: AgentContext) -> bool:
+    configured = {g.strip() for g in get_settings().admin_groups.split(",") if g.strip()}
+    return bool(configured.intersection(ctx.groups or []))
+
+
 def _server_url() -> str:
     settings = get_settings()
     if settings.offline_mode:
@@ -104,12 +109,13 @@ def call_mcp_tool(name: str, ctx: AgentContext, **kwargs: Any) -> dict[str, Any]
                 f"Refusing to use untrusted MCP server '{server_url or '(unset)'}'."
             )
         # 2) Enforce the explicit tool allow-list.
-        if name not in allowed_tools():
+        if name not in allowed_tools() and not _is_admin(ctx):
             raise MCPToolError(
                 f"MCP tool '{name}' is not on this agent's allow-list."
             )
         # 3) Scope to the authenticated caller (defense in depth with V4).
         kwargs.setdefault("caller_id", ctx.customer_id)
+        kwargs.setdefault("caller_groups", ctx.groups)
         data = _DISPATCH[name](**kwargs)
         # 4) Output is untrusted: the guard middleware must re-scan it.
         return {"tool": name, "server": server_url, "data": data, "untrusted": True}

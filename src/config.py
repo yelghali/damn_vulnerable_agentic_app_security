@@ -34,10 +34,12 @@ class Settings(BaseSettings):
     # OpenAI-compatible endpoint. Default runtime is Microsoft Foundry Local
     # (auto-discovered via foundry-local-sdk). Set LOCAL_MODEL_ENDPOINT to point
     # at any OpenAI-compatible server instead (e.g. Ollama: http://localhost:11434/v1).
-    # If nothing is reachable the app falls back to a deterministic stub.
+    # If nothing is reachable, the app fails loudly by default. Tests can opt
+    # into the deterministic stub with ALLOW_STUB_MODEL=true.
     local_model_name: str = Field(default="phi-3.5-mini", alias="LOCAL_MODEL_NAME")
     local_model_endpoint: str = Field(default="", alias="LOCAL_MODEL_ENDPOINT")
     local_model_key: str = Field(default="", alias="LOCAL_MODEL_KEY")
+    allow_stub_model: bool = Field(default=False, alias="ALLOW_STUB_MODEL")
 
     # --- Per-vulnerability toggles (None => inherit from secure_mode) -------
     enable_content_safety: bool | None = Field(default=None, alias="ENABLE_CONTENT_SAFETY")  # V1/V2
@@ -67,6 +69,8 @@ class Settings(BaseSettings):
     # AI gateway (Azure API Management) base URL placed in front of models/tools.
     ai_gateway_url: str = Field(default="", alias="AI_GATEWAY_URL")
     ai_gateway_token_limit: int = Field(default=20000, alias="AI_GATEWAY_TOKEN_LIMIT")
+    vulnerable_app_url: str = Field(default="", alias="VULNERABLE_APP_URL")
+    secure_app_url: str = Field(default="", alias="SECURE_APP_URL")
 
     # --- Azure AI Foundry --------------------------------------------------
     foundry_project_endpoint: str = Field(default="", alias="FOUNDRY_PROJECT_ENDPOINT")
@@ -123,6 +127,7 @@ class Settings(BaseSettings):
     pg_app_connection: str = Field(default="", alias="PG_APP_CONNECTION")
     default_customer_id: str = Field(default="CUST-1001", alias="DEFAULT_CUSTOMER_ID")
     default_owner_user_id: str = Field(default="user_1", alias="DEFAULT_OWNER_USER_ID")
+    admin_groups: str = Field(default="zava-admins", alias="ADMIN_GROUPS")
 
     # --- Entra / Key Vault / Monitor ---------------------------------------
     azure_tenant_id: str = Field(default="", alias="AZURE_TENANT_ID")
@@ -182,6 +187,10 @@ class Settings(BaseSettings):
         return {
             "secure_mode": self.secure_mode,
             "offline_mode": self.offline_mode,
+            "model_backend": "foundry-local/openai-compatible" if self.offline_mode else "azure-ai-foundry",
+            "allow_stub_model": self.allow_stub_model,
+            "vulnerable_app_url": self.vulnerable_app_url,
+            "secure_app_url": self.secure_app_url,
             "content_safety": bool(self.enable_content_safety),
             "prompt_shields": bool(self.enable_prompt_shields),
             "pii_redaction": bool(self.enable_pii_redaction),

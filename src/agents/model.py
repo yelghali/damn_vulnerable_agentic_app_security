@@ -15,11 +15,8 @@ one is just configuration, so there is a single code path to reason about:
   (``AIProjectClient.get_openai_client()``), orchestrated with the
   **Microsoft Agent Framework**.
 
-If the local SLM endpoint is not reachable (e.g. CI, or Foundry Local isn't
-running yet) the client falls back to a tiny deterministic stub so the app and
-the offline test-suite still work. The security controls themselves live in the
-*guards* and *tools* (deterministic), so the before/after behaviour is enforced
-regardless of which backend answers.
+Interactive runs require a real model. For CI and deterministic unit tests only,
+set ``ALLOW_STUB_MODEL=true`` to use the tiny deterministic stub.
 """
 
 from __future__ import annotations
@@ -36,9 +33,12 @@ _AOAI_API_VERSION = "2024-10-21"
 
 
 def _stub_compose(system_prompt: str, user_message: str, context: str) -> str:
-    """Deterministic fallback 'model' used only when no SLM endpoint is
-    reachable. Honors the active system prompt so vulnerable vs. secure
-    behaviour stays reproducible in tests/CI."""
+    """Deterministic test-only 'model'.
+
+    It honors the active system prompt so vulnerable vs. secure behaviour stays
+    reproducible in tests/CI, but interactive lab runs should use Foundry Local
+    or Azure AI Foundry instead.
+    """
     low = user_message.lower()
     hardened = "never reveal" in system_prompt.lower()
 
@@ -109,8 +109,7 @@ def _local_client() -> tuple[object, str] | None:
 
 
 def _call_local_slm(system_prompt: str, user_message: str, context: str) -> str | None:
-    """Call the local SLM; return ``None`` on any failure so the caller can
-    fall back to the deterministic stub (keeps the app + CI working offline)."""
+    """Call the local SLM; return ``None`` when no real model is available."""
     built = _local_client()
     if built is None:
         return None
@@ -126,8 +125,8 @@ def _call_local_slm(system_prompt: str, user_message: str, context: str) -> str 
             max_tokens=400,
         )
         return completion.choices[0].message.content or ""
-    except Exception as exc:  # network / model error -> graceful fallback.
-        logger.warning("model: local SLM call failed (%s); using stub fallback", exc)
+    except Exception as exc:
+        logger.warning("model: local SLM call failed (%s)", exc)
         return None
 
 
@@ -135,10 +134,18 @@ def compose_answer(system_prompt: str, user_message: str, context: str = "") -> 
     settings = get_settings()
 
     if settings.offline_mode:
+        if settings.allow_stub_model:
+            logger.warning("model: using deterministic stub because ALLOW_STUB_MODEL=true")
+            return _stub_compose(system_prompt, user_message, context)
         answer = _call_local_slm(system_prompt, user_message, context)
         if answer is not None:
             return answer
-        return _stub_compose(system_prompt, user_message, context)
+        raise RuntimeError(
+            "No real local model is reachable. Start Microsoft Foundry Local "
+            f"(`foundry model run {settings.local_model_name}`) or set "
+            "LOCAL_MODEL_ENDPOINT to an OpenAI-compatible endpoint. For tests "
+            "only, set ALLOW_STUB_MODEL=true."
+        )
 
     # --- Azure AI Foundry + Microsoft Agent Framework path -----------------
     # Lazy imports so offline mode needs no Azure SDKs.

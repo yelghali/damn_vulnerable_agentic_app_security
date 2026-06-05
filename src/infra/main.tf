@@ -23,7 +23,7 @@ locals {
     for user_id in local.cohort_user_ids : user_id => {
       safe_id       = replace(user_id, "_", "-")
       compact_id    = replace(user_id, "_", "")
-      customer_id   = "CUST-${format("%04d", index(local.cohort_user_ids, user_id) + 1)}"
+      customer_id   = "CUST-${1000 + index(local.cohort_user_ids, user_id) + 1}"
       retail_group  = "zava-${user_id}-retail"
       private_group = "zava-${user_id}-private"
     }

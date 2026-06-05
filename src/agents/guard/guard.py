@@ -81,18 +81,33 @@ class PiiResult:
 # Content Safety REST surface (analyze / shieldPrompt / detectGroundedness);
 # Azure AI Language PII uses its SDK (lazy-imported so the vulnerable baseline
 # never needs it installed).
-def _content_safety_creds() -> tuple[str, str] | None:
+def _content_safety_creds() -> tuple[str, str | None] | None:
     s = get_settings()
-    if s.content_safety_endpoint and s.content_safety_key:
-        return s.content_safety_endpoint.rstrip("/"), s.content_safety_key
+    if s.content_safety_endpoint:
+        return s.content_safety_endpoint.rstrip("/"), s.content_safety_key or None
     return None
 
 
-def _language_creds() -> tuple[str, str] | None:
+def _language_creds() -> tuple[str, str | None] | None:
     s = get_settings()
-    if s.language_endpoint and s.language_key:
-        return s.language_endpoint.rstrip("/"), s.language_key
+    if s.language_endpoint:
+        return s.language_endpoint.rstrip("/"), s.language_key or None
     return None
+
+
+def _ai_service_headers(key: str | None) -> dict[str, str]:
+    headers = {"content-type": "application/json"}
+    if key:
+        headers["Ocp-Apim-Subscription-Key"] = key
+        return headers
+
+    from azure.identity import DefaultAzureCredential
+
+    token = DefaultAzureCredential().get_token(
+        "https://cognitiveservices.azure.com/.default"
+    ).token
+    headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 def _azure_check_content_safety(text: str, creds: tuple[str, str]) -> None:
@@ -100,7 +115,7 @@ def _azure_check_content_safety(text: str, creds: tuple[str, str]) -> None:
     endpoint, key = creds
     resp = httpx.post(
         f"{endpoint}/contentsafety/text:analyze?api-version={_CS_API_VERSION}",
-        headers={"Ocp-Apim-Subscription-Key": key, "content-type": "application/json"},
+        headers=_ai_service_headers(key),
         json={"text": text, "outputType": "FourSeverityLevels"},
         timeout=10.0,
     )
@@ -129,13 +144,13 @@ def _azure_shield_prompt(text: str, source: str) -> None:
     creds = _content_safety_creds()
     if creds is None:
         raise SecurityConfigurationError(
-            "Prompt Shields are enabled but CONTENT_SAFETY_ENDPOINT and CONTENT_SAFETY_KEY are not configured."
+            "Prompt Shields are enabled but CONTENT_SAFETY_ENDPOINT is not configured."
         )
     endpoint, key = creds
     body = {"userPrompt": text} if source == "user" else {"documents": [text]}
     resp = httpx.post(
         f"{endpoint}/contentsafety/text:shieldPrompt?api-version={_CS_API_VERSION}",
-        headers={"Ocp-Apim-Subscription-Key": key, "content-type": "application/json"},
+        headers=_ai_service_headers(key),
         json=body,
         timeout=10.0,
     )
@@ -155,9 +170,11 @@ def _azure_redact_pii(text: str, creds: tuple[str, str]) -> PiiResult:
     """Genuine Azure AI Language ``recognize_pii_entities`` redaction."""
     from azure.ai.textanalytics import TextAnalyticsClient
     from azure.core.credentials import AzureKeyCredential
+    from azure.identity import DefaultAzureCredential
 
     endpoint, key = creds
-    client = TextAnalyticsClient(endpoint=endpoint, credential=AzureKeyCredential(key))
+    credential = AzureKeyCredential(key) if key else DefaultAzureCredential()
+    client = TextAnalyticsClient(endpoint=endpoint, credential=credential)
     result = client.recognize_pii_entities([text])[0]
     if result.is_error:  # pragma: no cover - service-side error
         raise RuntimeError(getattr(result, "error", "PII recognition failed"))
@@ -178,7 +195,7 @@ def check_content_safety(text: str) -> None:
     creds = _content_safety_creds()
     if creds is None:
         raise SecurityConfigurationError(
-            "Content Safety is enabled but CONTENT_SAFETY_ENDPOINT and CONTENT_SAFETY_KEY are not configured."
+            "Content Safety is enabled but CONTENT_SAFETY_ENDPOINT is not configured."
         )
     try:
         _azure_check_content_safety(text, creds)
@@ -200,7 +217,7 @@ def shield_prompt(text: str, source: str = "user") -> None:
         return  # LAB-VULN(V2): prompt shields disabled
     if _content_safety_creds() is None:
         raise SecurityConfigurationError(
-            "Prompt Shields are enabled but CONTENT_SAFETY_ENDPOINT and CONTENT_SAFETY_KEY are not configured."
+            "Prompt Shields are enabled but CONTENT_SAFETY_ENDPOINT is not configured."
         )
     try:
         _azure_shield_prompt(text, source)
@@ -246,7 +263,7 @@ def redact_pii(text: str) -> PiiResult:
     creds = _language_creds()
     if creds is None:
         raise SecurityConfigurationError(
-            "PII redaction is enabled but LANGUAGE_ENDPOINT and LANGUAGE_KEY are not configured."
+            "PII redaction is enabled but LANGUAGE_ENDPOINT is not configured."
         )
     try:
         return _azure_redact_pii(text, creds)
@@ -284,7 +301,7 @@ def check_groundedness(answer: str, sources: list[str]) -> bool:
     creds = _content_safety_creds()
     if creds is None:
         raise SecurityConfigurationError(
-            "Groundedness is enabled but CONTENT_SAFETY_ENDPOINT and CONTENT_SAFETY_KEY are not configured."
+            "Groundedness is enabled but CONTENT_SAFETY_ENDPOINT is not configured."
         )
     if not sources:
         raise SecurityConfigurationError("Groundedness is enabled but no grounding sources were supplied.")
@@ -300,7 +317,7 @@ def _azure_check_groundedness(answer: str, sources: list[str], creds: tuple[str,
     resp = httpx.post(
         f"{endpoint}/contentsafety/text:detectGroundedness"
         f"?api-version={_CS_GROUNDEDNESS_API_VERSION}",
-        headers={"Ocp-Apim-Subscription-Key": key, "content-type": "application/json"},
+        headers=_ai_service_headers(key),
         json={"domain": "Generic", "task": "Summarization", "text": answer,
               "groundingSources": sources},
         timeout=15.0,

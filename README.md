@@ -67,7 +67,8 @@ it in production.
 `OFFLINE_MODE=true` runs the whole app locally against a **real small language model**
 (via [Microsoft Foundry Local](https://learn.microsoft.com/azure/ai-foundry/foundry-local/))
 and a local SQLite database, so you can explore and validate the agent without
-provisioning anything. (No model running? It falls back to a deterministic stub.)
+provisioning anything. If no model is reachable, the app fails loudly so
+learners know they are not looking at canned answers.
 
 ```powershell
 # Windows (PowerShell)
@@ -96,6 +97,11 @@ uvicorn src.app.main:app --reload
 Flip a single module's mitigation by setting its toggle in `.env`
 (e.g. `ENABLE_PII_REDACTION=true`) and restarting, or flip everything at once with
 `SECURE_MODE=true`.
+
+For browser-only learners, deploy paired hosted app variants: one vulnerable
+(`SECURE_MODE=false`) and one secure (`SECURE_MODE=true` or selected `ENABLE_*`
+flags). Set `VULNERABLE_APP_URL` and `SECURE_APP_URL` so the UI can switch by
+navigation rather than letting each student mutate live security controls.
 
 ### Run the tests
 

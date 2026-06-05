@@ -35,6 +35,11 @@ class SearchConfigurationError(RuntimeError):
     """Raised when a required Azure AI Search security control is unavailable."""
 
 
+def _is_admin(caller_groups: list[str] | None = None) -> bool:
+    configured = {g.strip() for g in get_settings().admin_groups.split(",") if g.strip()}
+    return bool(configured.intersection(caller_groups or []))
+
+
 def _load_offline_docs() -> list[dict[str, Any]]:
     docs: list[dict[str, Any]] = []
     if not _DOCS_DIR.exists():
@@ -101,7 +106,7 @@ def search_documents(
     scored.sort(key=lambda x: x[0], reverse=True)
     results = [d for _, d in scored[:top]] or docs[:top]
 
-    if settings.enable_doc_security:
+    if settings.enable_doc_security and not _is_admin(caller_groups):
         # SECURE: document-level security trimming.
         # Mirrors AI Search:  group_ids/any(g:search.in(g, '<caller groups>'))
         groups = set(caller_groups or [])
@@ -138,7 +143,7 @@ def _azure_search(
         credential=credential,
     )
     search_filter: str | None = None
-    if settings.enable_doc_security:
+    if settings.enable_doc_security and not _is_admin(caller_groups):
         groups = ",".join(g.replace("'", "").replace(",", "") for g in (caller_groups or []))
         # Only return docs with no ACL or whose group_ids intersect the caller's.
         search_filter = f"not group_ids/any() or group_ids/any(g: search.in(g, '{groups}', ','))"

@@ -49,7 +49,12 @@ def _offline_conn() -> sqlite3.Connection:
     return conn
 
 
-def _postgres_conn():
+def _is_admin(caller_groups: list[str] | None = None) -> bool:
+    configured = {g.strip() for g in get_settings().admin_groups.split(",") if g.strip()}
+    return bool(configured.intersection(caller_groups or []))
+
+
+def _postgres_conn(*, admin: bool = False):
     """Connect to Azure Database for PostgreSQL when OFFLINE_MODE=false.
 
     LAB-VULN(V4): the vulnerable baseline deliberately uses the admin
@@ -57,11 +62,7 @@ def _postgres_conn():
     the Azure seed step creates.
     """
     settings = get_settings()
-    conninfo = (
-        settings.pg_app_connection
-        if settings.enable_tool_least_priv
-        else settings.pg_admin_connection
-    )
+    conninfo = settings.pg_admin_connection if admin or not settings.enable_tool_least_priv else settings.pg_app_connection
     if not conninfo:
         which = "PG_APP_CONNECTION" if settings.enable_tool_least_priv else "PG_ADMIN_CONNECTION"
         raise ToolError(f"{which} is required when OFFLINE_MODE=false.")
@@ -81,9 +82,9 @@ def reset_offline_db() -> None:
     _offline_conn().close()
 
 
-def _conn():
+def _conn(*, admin: bool = False):
     settings = get_settings()
-    return _offline_conn() if settings.offline_mode else _postgres_conn()
+    return _offline_conn() if settings.offline_mode else _postgres_conn(admin=admin)
 
 
 def _set_security_context(conn: Any, *, caller_id: str | None, customer_id: str | None = None) -> None:
@@ -108,7 +109,7 @@ def _ph() -> str:
     return "?" if get_settings().offline_mode else "%s"
 
 
-def _authorize(caller_id: str | None, customer_id: str) -> None:
+def _authorize(caller_id: str | None, customer_id: str, caller_groups: list[str] | None = None) -> None:
     """Secure mode: a caller may only access their own customer record.
 
     LAB-VULN(V4): in the vulnerable baseline this check is skipped entirely,
@@ -117,6 +118,8 @@ def _authorize(caller_id: str | None, customer_id: str) -> None:
     settings = get_settings()
     if not settings.enable_tool_least_priv:
         return  # vulnerable: no object-level authorization
+    if _is_admin(caller_groups):
+        return
     if caller_id is None or caller_id != customer_id:
         raise ToolError(
             f"Access denied: principal '{caller_id}' may not access customer "
@@ -127,10 +130,10 @@ def _authorize(caller_id: str | None, customer_id: str) -> None:
 # ---------------------------------------------------------------------------
 # Tool implementations
 # ---------------------------------------------------------------------------
-def get_accounts(customer_id: str, caller_id: str | None = None) -> list[dict[str, Any]]:
+def get_accounts(customer_id: str, caller_id: str | None = None, caller_groups: list[str] | None = None) -> list[dict[str, Any]]:
     """Return accounts + balances for a customer."""
-    _authorize(caller_id, customer_id)
-    conn = _conn()
+    _authorize(caller_id, customer_id, caller_groups)
+    conn = _conn(admin=_is_admin(caller_groups))
     settings = get_settings()
     ph = _ph()
     try:
@@ -155,10 +158,10 @@ def get_accounts(customer_id: str, caller_id: str | None = None) -> list[dict[st
 
 
 def get_transactions(
-    account_id: str, limit: int = 20, caller_id: str | None = None
+    account_id: str, limit: int = 20, caller_id: str | None = None, caller_groups: list[str] | None = None
 ) -> list[dict[str, Any]]:
     """Return recent transactions for an account."""
-    conn = _conn()
+    conn = _conn(admin=_is_admin(caller_groups))
     settings = get_settings()
     ph = _ph()
     try:
@@ -171,7 +174,7 @@ def get_transactions(
             ).fetchone()
             if owner is None:
                 return []
-            _authorize(caller_id, owner["customer_id"])
+            _authorize(caller_id, owner["customer_id"], caller_groups)
             cur = conn.execute(
                 "SELECT txn_id, account_id, amount, description, posted_at "
                 f"FROM transactions WHERE account_id = {ph} "
@@ -191,15 +194,15 @@ def get_transactions(
         conn.close()
 
 
-def get_customer_profile(customer_id: str, caller_id: str | None = None) -> dict[str, Any]:
+def get_customer_profile(customer_id: str, caller_id: str | None = None, caller_groups: list[str] | None = None) -> dict[str, Any]:
     """Return a customer's profile, including **PII** (SSN, email, address).
 
     This is the tool the V3 demo leans on: in the vulnerable baseline the SSN
     and contact details flow straight back to the caller (and into the logs)
     with no redaction. Module 3 redacts them on the way out.
     """
-    _authorize(caller_id, customer_id)
-    conn = _conn()
+    _authorize(caller_id, customer_id, caller_groups)
+    conn = _conn(admin=_is_admin(caller_groups))
     settings = get_settings()
     ph = _ph()
     try:
@@ -221,10 +224,10 @@ def get_customer_profile(customer_id: str, caller_id: str | None = None) -> dict
         conn.close()
 
 
-def get_credit_score(customer_id: str, caller_id: str | None = None) -> dict[str, Any]:
+def get_credit_score(customer_id: str, caller_id: str | None = None, caller_groups: list[str] | None = None) -> dict[str, Any]:
     """Return a customer's (sensitive) credit score."""
-    _authorize(caller_id, customer_id)
-    conn = _conn()
+    _authorize(caller_id, customer_id, caller_groups)
+    conn = _conn(admin=_is_admin(caller_groups))
     ph = _ph()
     try:
         _set_security_context(conn, caller_id=caller_id, customer_id=customer_id)
@@ -243,6 +246,7 @@ def transfer_funds(
     to_account: str,
     amount: float,
     caller_id: str | None = None,
+    caller_groups: list[str] | None = None,
     approved: bool = False,
 ) -> dict[str, Any]:
     """High-risk, state-changing tool: move money between accounts.
@@ -257,7 +261,7 @@ def transfer_funds(
         raise ToolError(
             "transfer_funds requires human approval (HITL) before execution."
         )
-    conn = _conn()
+    conn = _conn(admin=_is_admin(caller_groups))
     ph = _ph()
     try:
         _set_security_context(conn, caller_id=caller_id)
@@ -268,7 +272,7 @@ def transfer_funds(
             ).fetchone()
             if src is None:
                 raise ToolError("Source account not found.")
-            _authorize(caller_id, src["customer_id"])
+            _authorize(caller_id, src["customer_id"], caller_groups)
             if src["balance"] < amount:
                 raise ToolError("Insufficient funds.")
             conn.execute(
