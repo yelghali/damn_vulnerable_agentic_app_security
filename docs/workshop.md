@@ -12,23 +12,23 @@ duration_minutes: 240
 tags: azure, ai, security, agents, foundry, content-safety, prompt-shields, entra, apim, mcp, purview, red-teaming
 navigation_levels: 3
 sections_title:
-  - "Introduction"
-  - "The code map"
-  - "Part 1 · Understand the vulnerabilities (run locally)"
-  - "Part 2 · Add the Azure security layers"
-  - "Module 1 — Foundry guardrails: Responsible & Safe AI"
-  - "Module 2 — Foundry guardrails: Prompt injection & jailbreak"
-  - "Module 3 — Azure AI Language: PII & sensitive-data protection"
-  - "Module 4 — Secure MCP through Foundry: tool least-privilege, HITL & secure code"
-  - "Module 5 — Entra ID identity & AI Search document security"
-  - "Module 6 — APIM AI gateway, observability, rate limiting & Defender"
-  - "Module 7 — Agent governance toolkit"
-  - "Module 8 — Data poisoning deep-dive & groundedness"
-  - "Module 9 — Evaluations"
+    - "Introduction"
+    - "The code map"
+    - "Part 1 · Understand the vulnerabilities (run locally)"
+    - "Part 2 · Add the Azure security layers"
+    - "Module 1 — Foundry guardrails: Responsible & Safe AI"
+    - "Module 2 — Foundry guardrails: Prompt injection & jailbreak"
+    - "Module 3 — Azure AI Language: PII & sensitive-data protection"
+    - "Module 4 — Secure MCP through Foundry: tool least-privilege, HITL & secure code"
+    - "Module 5 — Entra ID identity & AI Search document security"
+    - "Module 6 — APIM AI gateway, observability, rate limiting & Defender"
+    - "Module 7 — Agent governance toolkit"
+    - "Module 8 — Data poisoning deep-dive & groundedness"
+    - "Module 9 — Evaluations"
     - "Module 10 — Microsoft Purview: DLP & data governance"
     - "Module 11 — AI red teaming (automated)"
-  - "Capstone — Red-team challenge (manual)"
-  - "Reference — vulnerability ↔ standards map"
+    - "Capstone — Red-team challenge (manual)"
+    - "Reference — vulnerability ↔ standards map"
 ---
 
 <style>
