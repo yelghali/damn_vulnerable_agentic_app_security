@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">Zava security module flows</title>
+  <desc id="desc">Compact pedagogical flows for each lab security module showing which Azure services enforce each boundary.</desc>
+  <style>
+    .bg{fill:#f7f9fc}.panel{fill:#fff;stroke:#cbd5e1;stroke-width:1.4;rx:8}.h{font:700 18px Segoe UI,Arial,sans-serif;fill:#0f172a}.t{font:500 13px Segoe UI,Arial,sans-serif;fill:#334155}.s{font:600 12px Segoe UI,Arial,sans-serif;fill:#475569}.box{fill:#e0f2fe;stroke:#0284c7;rx:6}.box2{fill:#ecfdf5;stroke:#059669;rx:6}.box3{fill:#fff7ed;stroke:#ea580c;rx:6}.box4{fill:#f5f3ff;stroke:#7c3aed;rx:6}.arrow{stroke:#475569;stroke-width:1.8;fill:none;marker-end:url(#arrow)}
+  </style>
+  <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0l10 5-10 5z" fill="#475569"/></marker></defs>
+  <rect class="bg" width="1200" height="760"/>
+  <text class="h" x="32" y="38">Security module mini-flows</text>
+  <text class="t" x="32" y="62">Each row shows the boundary learners change: identity edge, Foundry guardrail, app/tool guard, shared data service, or governance loop.</text>
+  <g transform="translate(28 86)">
+    <rect class="panel" width="548" height="94"/>
+    <text class="h" x="18" y="28">1. Responsible &amp; Safe AI</text><text class="s" x="18" y="50">User prompt</text><path class="arrow" d="M105 47h54"/><rect class="box" x="164" y="31" width="128" height="32"/><text class="s" x="178" y="52">Foundry RAI</text><path class="arrow" d="M296 47h54"/><rect class="box2" x="356" y="31" width="158" height="32"/><text class="s" x="371" y="52">Governed model</text>
+  </g>
+  <g transform="translate(624 86)">
+    <rect class="panel" width="548" height="94"/>
+    <text class="h" x="18" y="28">2. Prompt Shields</text><text class="s" x="18" y="50">RAG chunk / input</text><path class="arrow" d="M118 47h42"/><rect class="box" x="166" y="31" width="142" height="32"/><text class="s" x="181" y="52">ShieldPrompt</text><path class="arrow" d="M312 47h42"/><rect class="box2" x="360" y="31" width="140" height="32"/><text class="s" x="374" y="52">Agent context</text>
+  </g>
+  <g transform="translate(28 196)">
+    <rect class="panel" width="548" height="94"/>
+    <text class="h" x="18" y="28">3. PII Protection</text><text class="s" x="18" y="50">Tool output</text><path class="arrow" d="M92 47h48"/><rect class="box" x="146" y="31" width="132" height="32"/><text class="s" x="158" y="52">AI Language PII</text><path class="arrow" d="M282 47h54"/><rect class="box2" x="342" y="31" width="160" height="32"/><text class="s" x="356" y="52">Redacted reply/log</text>
+  </g>
+  <g transform="translate(624 196)">
+    <rect class="panel" width="548" height="94"/>
+    <text class="h" x="18" y="28">4. Tools, MCP, HITL, Code</text><text class="s" x="18" y="50">Agent action</text><path class="arrow" d="M102 47h34"/><rect class="box4" x="142" y="31" width="116" height="32"/><text class="s" x="155" y="52">Policy gate</text><path class="arrow" d="M262 47h34"/><rect class="box3" x="302" y="31" width="200" height="32"/><text class="s" x="316" y="52">Postgres MCP / RLS</text>
+  </g>
+  <g transform="translate(28 306)">
+    <rect class="panel" width="548" height="94"/>
+    <text class="h" x="18" y="28">5. Entra + Search Security</text><text class="s" x="18" y="50">Signed user</text><path class="arrow" d="M94 47h42"/><rect class="box4" x="142" y="31" width="108" height="32"/><text class="s" x="158" y="52">Entra OBO</text><path class="arrow" d="M254 47h42"/><rect class="box3" x="302" y="31" width="200" height="32"/><text class="s" x="316" y="52">Search group_ids ACL</text>
+  </g>
+  <g transform="translate(624 306)">
+    <rect class="panel" width="548" height="94"/>
+    <text class="h" x="18" y="28">6. APIM + Defender</text><text class="s" x="18" y="50">Browser/API</text><path class="arrow" d="M94 47h42"/><rect class="box4" x="142" y="31" width="136" height="32"/><text class="s" x="155" y="52">APIM gateway</text><path class="arrow" d="M282 47h36"/><rect class="box2" x="324" y="31" width="188" height="32"/><text class="s" x="339" y="52">Monitor / Defender</text>
+  </g>
+  <g transform="translate(28 416)">
+    <rect class="panel" width="548" height="94"/>
+    <text class="h" x="18" y="28">7. Agent Governance Toolkit</text><text class="s" x="18" y="50">Agent spec</text><path class="arrow" d="M86 47h46"/><rect class="box4" x="138" y="31" width="132" height="32"/><text class="s" x="151" y="52">AGT policy</text><path class="arrow" d="M274 47h42"/><rect class="box2" x="322" y="31" width="180" height="32"/><text class="s" x="335" y="52">Posture decision</text>
+  </g>
+  <g transform="translate(624 416)">
+    <rect class="panel" width="548" height="94"/>
+    <text class="h" x="18" y="28">8. Poisoning + Groundedness</text><text class="s" x="18" y="50">Retrieved doc</text><path class="arrow" d="M104 47h36"/><rect class="box" x="146" y="31" width="142" height="32"/><text class="s" x="159" y="52">Groundedness</text><path class="arrow" d="M292 47h36"/><rect class="box2" x="334" y="31" width="180" height="32"/><text class="s" x="348" y="52">Source-backed answer</text>
+  </g>
+  <g transform="translate(28 526)">
+    <rect class="panel" width="548" height="94"/>
+    <text class="h" x="18" y="28">9. Evaluations</text><text class="s" x="18" y="50">Attack set</text><path class="arrow" d="M82 47h50"/><rect class="box4" x="138" y="31" width="138" height="32"/><text class="s" x="153" y="52">Eval runner</text><path class="arrow" d="M280 47h44"/><rect class="box2" x="330" y="31" width="172" height="32"/><text class="s" x="344" y="52">Pass/fail metrics</text>
+  </g>
+  <g transform="translate(624 526)">
+    <rect class="panel" width="548" height="94"/>
+    <text class="h" x="18" y="28">10. Purview</text><text class="s" x="18" y="50">Tenant data</text><path class="arrow" d="M96 47h46"/><rect class="box3" x="148" y="31" width="130" height="32"/><text class="s" x="164" y="52">DSPM / DLP</text><path class="arrow" d="M282 47h44"/><rect class="box2" x="332" y="31" width="176" height="32"/><text class="s" x="346" y="52">Governed data use</text>
+  </g>
+  <g transform="translate(326 636)">
+    <rect class="panel" width="548" height="94"/>
+    <text class="h" x="18" y="28">11. AI Red Teaming</text><text class="s" x="18" y="50">Adversarial prompts</text><path class="arrow" d="M130 47h34"/><rect class="box4" x="170" y="31" width="132" height="32"/><text class="s" x="184" y="52">Red-team run</text><path class="arrow" d="M306 47h42"/><rect class="box2" x="354" y="31" width="154" height="32"/><text class="s" x="369" y="52">Remediation list</text>
+  </g>
+</svg>

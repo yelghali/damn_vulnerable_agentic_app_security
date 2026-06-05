@@ -234,6 +234,140 @@ resource "azurerm_role_assignment" "app_to_search" {
   principal_id         = azurerm_container_app.zava_app[0].identity[0].principal_id
 }
 
+# Optional cohort mode: one browser-hosted app per generated lab user. This is
+# useful when each participant must edit their own Foundry project/agents while
+# sharing AI Search, PostgreSQL, MCP, and the APIM gateway.
+resource "azurerm_container_app" "zava_user_app" {
+  for_each                     = var.deploy_app && var.deploy_cohort_apps ? local.cohort_user_map : {}
+  name                         = "ca-app-${local.base}-${each.value.safe_id}"
+  container_app_environment_id = azurerm_container_app_environment.mcp[0].id
+  resource_group_name          = azurerm_resource_group.rg.name
+  revision_mode                = "Single"
+  tags                         = merge(local.tags, { lab_user = each.key })
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  secret {
+    name  = "pg-admin-connection"
+    value = "postgresql://${var.pg_admin_user}:${urlencode(var.pg_admin_password)}@${azurerm_postgresql_flexible_server.pg.fqdn}:5432/${azurerm_postgresql_flexible_server_database.zava.name}?sslmode=require"
+  }
+
+  secret {
+    name  = "pg-app-connection"
+    value = var.pg_app_password == "" ? "not-set" : "postgresql://${var.pg_app_user}:${urlencode(var.pg_app_password)}@${azurerm_postgresql_flexible_server.pg.fqdn}:5432/${azurerm_postgresql_flexible_server_database.zava.name}?sslmode=require"
+  }
+
+  secret {
+    name  = "app-registry-password"
+    value = var.app_registry_password == "" ? "not-set" : var.app_registry_password
+  }
+
+  dynamic "registry" {
+    for_each = var.app_registry_server == "" ? [] : [1]
+    content {
+      server               = var.app_registry_server
+      username             = var.app_registry_username
+      password_secret_name = "app-registry-password"
+    }
+  }
+
+  template {
+    min_replicas = 1
+    max_replicas = 1
+
+    container {
+      name   = "zava-web"
+      image  = var.app_container_image
+      cpu    = 0.5
+      memory = "1Gi"
+
+      env {
+        name  = "ZAVA_LAB_USER"
+        value = each.key
+      }
+      env {
+        name  = "OFFLINE_MODE"
+        value = tostring(var.app_offline_mode)
+      }
+      env {
+        name  = "SECURE_MODE"
+        value = tostring(var.secure_mode)
+      }
+      env {
+        name  = "FOUNDRY_PROJECT_ENDPOINT"
+        value = "${azurerm_cognitive_account.ai.endpoint}api/projects/${azapi_resource.cohort_project[each.key].name}"
+      }
+      env {
+        name  = "FOUNDRY_MODEL_DEPLOYMENT"
+        value = azurerm_cognitive_deployment.governed.name
+      }
+      env {
+        name  = "FOUNDRY_UNGOVERNED_DEPLOYMENT"
+        value = var.enable_ungoverned_model ? azurerm_cognitive_deployment.ungoverned[0].name : azurerm_cognitive_deployment.governed.name
+      }
+      env {
+        name  = "SEARCH_ENDPOINT"
+        value = "https://${azurerm_search_service.search.name}.search.windows.net"
+      }
+      env {
+        name  = "SEARCH_INDEX_NAME"
+        value = "zava-financial-docs"
+      }
+      env {
+        name  = "PG_MCP_SERVER_URL"
+        value = var.deploy_mcp_toolbox ? "https://${azurerm_container_app.mcp_toolbox[0].ingress[0].fqdn}/mcp" : ""
+      }
+      env {
+        name  = "AI_GATEWAY_URL"
+        value = var.deploy_apim ? "${azurerm_api_management.gw[0].gateway_url}/${each.value.safe_id}" : ""
+      }
+      env {
+        name  = "DEFAULT_CUSTOMER_ID"
+        value = each.value.customer_id
+      }
+      env {
+        name  = "DEFAULT_OWNER_USER_ID"
+        value = each.key
+      }
+      env {
+        name        = "PG_ADMIN_CONNECTION"
+        secret_name = "pg-admin-connection"
+      }
+      env {
+        name        = "PG_APP_CONNECTION"
+        secret_name = "pg-app-connection"
+      }
+    }
+  }
+
+  ingress {
+    external_enabled = true
+    target_port      = 8000
+    transport        = "http"
+
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+}
+
+resource "azurerm_role_assignment" "cohort_app_to_foundry" {
+  for_each             = var.deploy_app && var.deploy_cohort_apps && !var.app_offline_mode ? local.cohort_user_map : {}
+  scope                = azurerm_cognitive_account.ai.id
+  role_definition_name = "Cognitive Services OpenAI User"
+  principal_id         = azurerm_container_app.zava_user_app[each.key].identity[0].principal_id
+}
+
+resource "azurerm_role_assignment" "cohort_app_to_search" {
+  for_each             = var.deploy_app && var.deploy_cohort_apps && !var.app_offline_mode ? local.cohort_user_map : {}
+  scope                = azurerm_search_service.search.id
+  role_definition_name = "Search Index Data Reader"
+  principal_id         = azurerm_container_app.zava_user_app[each.key].identity[0].principal_id
+}
+
 # Least-privilege RBAC for the Azure MCP Server's managed identity: Reader on the
 # resource group so it can enumerate the PostgreSQL server / databases / tables.
 # (Data-plane SQL queries additionally require the identity to be a PostgreSQL

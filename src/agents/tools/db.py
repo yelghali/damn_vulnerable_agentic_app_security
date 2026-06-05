@@ -86,6 +86,16 @@ def _conn():
     return _offline_conn() if settings.offline_mode else _postgres_conn()
 
 
+def _set_security_context(conn: Any, *, caller_id: str | None, customer_id: str | None = None) -> None:
+    settings = get_settings()
+    if settings.offline_mode or not settings.enable_tool_least_priv:
+        return
+    owner_user_id = settings.default_owner_user_id
+    conn.execute("SELECT set_config('app.owner_user_id', %s, true)", (owner_user_id,))
+    if customer_id or caller_id:
+        conn.execute("SELECT set_config('app.customer_id', %s, true)", (customer_id or caller_id,))
+
+
 # ---------------------------------------------------------------------------
 # Internal query helpers
 # ---------------------------------------------------------------------------
@@ -124,6 +134,7 @@ def get_accounts(customer_id: str, caller_id: str | None = None) -> list[dict[st
     settings = get_settings()
     ph = _ph()
     try:
+        _set_security_context(conn, caller_id=caller_id, customer_id=customer_id)
         if settings.enable_tool_least_priv:
             cur = conn.execute(
                 "SELECT account_id, account_type, balance, currency "
@@ -151,6 +162,7 @@ def get_transactions(
     settings = get_settings()
     ph = _ph()
     try:
+        _set_security_context(conn, caller_id=caller_id)
         if settings.enable_tool_least_priv:
             # Verify ownership before returning rows.
             owner = conn.execute(
@@ -191,6 +203,7 @@ def get_customer_profile(customer_id: str, caller_id: str | None = None) -> dict
     settings = get_settings()
     ph = _ph()
     try:
+        _set_security_context(conn, caller_id=caller_id, customer_id=customer_id)
         if settings.enable_tool_least_priv:
             row = conn.execute(
                 "SELECT customer_id, full_name, email, ssn, address "
@@ -214,6 +227,7 @@ def get_credit_score(customer_id: str, caller_id: str | None = None) -> dict[str
     conn = _conn()
     ph = _ph()
     try:
+        _set_security_context(conn, caller_id=caller_id, customer_id=customer_id)
         row = conn.execute(
             "SELECT customer_id, score, bureau, updated_at "
             f"FROM credit_scores WHERE customer_id = {ph}",
@@ -246,6 +260,7 @@ def transfer_funds(
     conn = _conn()
     ph = _ph()
     try:
+        _set_security_context(conn, caller_id=caller_id)
         if settings.enable_tool_least_priv:
             src = conn.execute(
                 f"SELECT customer_id, balance FROM accounts WHERE account_id = {ph}",

@@ -199,6 +199,33 @@ resource "azapi_resource" "project" {
   schema_validation_enabled = false
 }
 
+# Optional cohort mode: one Foundry project per lab user so participants can
+# manipulate their own agents, prompts, and guardrails without stepping on each
+# other. Model deployments stay on the shared AIServices account to avoid quota
+# pressure; projects are the portal workspace boundary learners use.
+resource "azapi_resource" "cohort_project" {
+  for_each  = local.cohort_user_map
+  type      = "Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview"
+  name      = "proj-${local.base}-${each.value.compact_id}"
+  parent_id = azurerm_cognitive_account.ai.id
+  location  = azurerm_resource_group.rg.location
+
+  depends_on = [azapi_update_resource.ai_allow_projects]
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  body = {
+    properties = {
+      displayName = "Zava Wealth Advisor - ${each.key}"
+      description = "Per-user Foundry project for ${each.key}. Shares model deployments, AI Search, PostgreSQL, MCP, and APIM with the cohort."
+    }
+  }
+
+  schema_validation_enabled = false
+}
+
 # Let the deployer create agents / call models via the SDK.
 resource "azurerm_role_assignment" "ai_developer" {
   scope                = azurerm_cognitive_account.ai.id

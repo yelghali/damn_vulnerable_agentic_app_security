@@ -143,6 +143,12 @@ when `USE_MCP_TOOLS=true`, and APIM when `ENABLE_AI_GATEWAY=true`. See
 [docs/workshop.md](docs/workshop.md) for region/quota prerequisites and the
 tenant-admin prep steps (Entra app registration, Purview) with fallbacks.
 
+For instructor-led cohorts, enable `enable_cohort_mode=true`. The default starts
+with `user_1` and `user_2`: each user gets a Foundry project, APIM API path, and
+optional hosted app URL, while AI Search, PostgreSQL, MCP, Key Vault, Monitor,
+and the APIM instance stay shared. Generate the matching Entra/Search/Postgres
+mapping with `python -m src.scripts.setup_lab_users --count 2`.
+
 ### Make the agents appear in the Foundry portal
 
 The FastAPI lab can call Foundry directly or through APIM; to also create

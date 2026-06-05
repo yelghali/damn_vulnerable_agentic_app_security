@@ -3,6 +3,7 @@
 
 CREATE TABLE customers (
     customer_id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL DEFAULT 'user_1',
     full_name   TEXT NOT NULL,
     email       TEXT NOT NULL,
     ssn         TEXT NOT NULL,
@@ -12,6 +13,7 @@ CREATE TABLE customers (
 CREATE TABLE accounts (
     account_id   TEXT PRIMARY KEY,
     customer_id  TEXT NOT NULL REFERENCES customers(customer_id),
+    owner_user_id TEXT NOT NULL DEFAULT 'user_1',
     account_type TEXT NOT NULL,
     balance      REAL NOT NULL,
     currency     TEXT NOT NULL DEFAULT 'USD'
@@ -33,14 +35,14 @@ CREATE TABLE credit_scores (
 );
 
 INSERT INTO customers VALUES
-('CUST-1001', 'Alex Rivera',  'alex.rivera@example.com',  '111-22-3333', '12 Maple St, Seattle WA'),
-('CUST-1002', 'Priya Singh',  'priya.singh@example.com',  '444-55-6666', '88 Oak Ave, Austin TX');
+('CUST-1001', 'user_1', 'Alex Rivera',  'alex.rivera@example.com',  '111-22-3333', '12 Maple St, Seattle WA'),
+('CUST-1002', 'user_2', 'Priya Singh',  'priya.singh@example.com',  '444-55-6666', '88 Oak Ave, Austin TX');
 
 INSERT INTO accounts VALUES
-('ACC-100001', 'CUST-1001', 'checking', 4200.55, 'USD'),
-('ACC-100002', 'CUST-1001', 'savings',  18250.00, 'USD'),
-('ACC-200001', 'CUST-1002', 'checking', 950.10,  'USD'),
-('ACC-200002', 'CUST-1002', 'savings',  53200.75, 'USD');
+('ACC-100001', 'CUST-1001', 'user_1', 'checking', 4200.55, 'USD'),
+('ACC-100002', 'CUST-1001', 'user_1', 'savings',  18250.00, 'USD'),
+('ACC-200001', 'CUST-1002', 'user_2', 'checking', 950.10,  'USD'),
+('ACC-200002', 'CUST-1002', 'user_2', 'savings',  53200.75, 'USD');
 
 INSERT INTO transactions VALUES
 ('TXN-1', 'ACC-100001', -54.20,  'Grocery store',   '2026-05-01'),

@@ -114,11 +114,50 @@ def seed_azure() -> None:
                 role_ident
             )
         )
+        for table in ("customers", "accounts", "transactions", "credit_scores"):
+            conn.execute(sql.SQL("ALTER TABLE {} ENABLE ROW LEVEL SECURITY").format(sql.Identifier(table)))
+        conn.execute("DROP POLICY IF EXISTS zava_customer_owner ON customers")
+        conn.execute("DROP POLICY IF EXISTS zava_account_owner ON accounts")
+        conn.execute("DROP POLICY IF EXISTS zava_transaction_owner ON transactions")
+        conn.execute("DROP POLICY IF EXISTS zava_credit_score_owner ON credit_scores")
+        conn.execute(
+            sql.SQL(
+                "CREATE POLICY zava_customer_owner ON customers FOR SELECT TO {} USING ("
+                "owner_user_id = current_setting('app.owner_user_id', true) "
+                "OR customer_id = current_setting('app.customer_id', true))"
+            ).format(role_ident)
+        )
+        conn.execute(
+            sql.SQL(
+                "CREATE POLICY zava_account_owner ON accounts FOR SELECT TO {} USING ("
+                "owner_user_id = current_setting('app.owner_user_id', true) "
+                "OR customer_id = current_setting('app.customer_id', true))"
+            ).format(role_ident)
+        )
+        conn.execute(
+            sql.SQL(
+                "CREATE POLICY zava_transaction_owner ON transactions FOR SELECT TO {} USING ("
+                "EXISTS (SELECT 1 FROM accounts a WHERE a.account_id = transactions.account_id "
+                "AND (a.owner_user_id = current_setting('app.owner_user_id', true) "
+                "OR a.customer_id = current_setting('app.customer_id', true))))"
+            ).format(role_ident)
+        )
+        conn.execute(
+            sql.SQL(
+                "CREATE POLICY zava_credit_score_owner ON credit_scores FOR SELECT TO {} USING ("
+                "EXISTS (SELECT 1 FROM customers c WHERE c.customer_id = credit_scores.customer_id "
+                "AND (c.owner_user_id = current_setting('app.owner_user_id', true) "
+                "OR c.customer_id = current_setting('app.customer_id', true))))"
+            ).format(role_ident)
+        )
         conn.commit()
         for table in ("accounts", "transactions", "credit_scores"):
             count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             print(f"  seeded {table:<14} {count} row(s)")
-    print(f"Azure PostgreSQL store reseeded; least-privilege role '{app_role}' granted SELECT.")
+    print(
+        f"Azure PostgreSQL store reseeded; least-privilege role '{app_role}' granted SELECT "
+        "with owner_user_id row-level security policies."
+    )
 
     if settings.search_endpoint:
         from src.scripts.provision_foundry_agents import ensure_search_index  # noqa: PLC0415

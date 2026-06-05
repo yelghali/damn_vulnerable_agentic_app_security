@@ -130,3 +130,72 @@ resource "azurerm_api_management_api_policy" "aoai" {
 </policies>
 XML
 }
+
+# Optional cohort mode: keep one shared APIM service, but create a separate API
+# surface per lab user. Each participant can safely edit their own API policy
+# (rate limits, auth, logging) without changing another user's route.
+resource "azurerm_api_management_api" "cohort_aoai" {
+  for_each              = var.deploy_apim ? local.cohort_user_map : {}
+  name                  = "azure-openai-${each.value.safe_id}"
+  api_management_name   = azurerm_api_management.gw[0].name
+  resource_group_name   = azurerm_resource_group.rg.name
+  revision              = "1"
+  display_name          = "Azure OpenAI (Foundry) - ${each.key}"
+  path                  = "${each.value.safe_id}/openai"
+  protocols             = ["https"]
+  subscription_required = false
+}
+
+resource "azurerm_api_management_api_operation" "cohort_chat_completions" {
+  for_each            = var.deploy_apim ? local.cohort_user_map : {}
+  operation_id        = "chat-completions"
+  api_name            = azurerm_api_management_api.cohort_aoai[each.key].name
+  api_management_name = azurerm_api_management.gw[0].name
+  resource_group_name = azurerm_resource_group.rg.name
+  display_name        = "Chat completions"
+  method              = "POST"
+  url_template        = "/deployments/{deploymentId}/chat/completions"
+
+  template_parameter {
+    name     = "deploymentId"
+    required = true
+    type     = "string"
+  }
+
+  request {
+    representation {
+      content_type = "application/json"
+    }
+  }
+
+  response {
+    status_code = 200
+  }
+}
+
+resource "azurerm_api_management_api_policy" "cohort_aoai" {
+  for_each            = var.deploy_apim ? local.cohort_user_map : {}
+  api_name            = azurerm_api_management_api.cohort_aoai[each.key].name
+  api_management_name = azurerm_api_management.gw[0].name
+  resource_group_name = azurerm_resource_group.rg.name
+
+  xml_content = <<XML
+<policies>
+  <inbound>
+    <base />
+    <rate-limit-by-key calls="60" renewal-period="60" counter-key="${each.key}" />
+    <set-header name="x-zava-lab-user" exists-action="override">
+      <value>${each.key}</value>
+    </set-header>
+    <set-header name="Authorization" exists-action="delete" />
+    <set-header name="api-key" exists-action="override">
+      <value>{{foundry-openai-key}}</value>
+    </set-header>
+    <set-backend-service backend-id="${azurerm_api_management_backend.foundry[0].name}" />
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>
+XML
+}

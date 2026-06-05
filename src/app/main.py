@@ -32,7 +32,7 @@ _STATIC = Path(__file__).resolve().parent / "static"
 
 class ChatRequest(BaseModel):
     message: str
-    customer_id: str | None = "CUST-1001"
+    customer_id: str | None = None
     groups: list[str] = ["retail-customers"]
     approved_action: dict | None = None
 
@@ -65,8 +65,10 @@ def format_error(exc: Exception) -> str:
 
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(req: ChatRequest) -> ChatResponse:
+    settings = get_settings()
+    customer_id = req.customer_id or settings.default_customer_id
     ctx = AgentContext(
-        customer_id=req.customer_id,
+        customer_id=customer_id,
         groups=req.groups,
         approved_action=req.approved_action,
     )

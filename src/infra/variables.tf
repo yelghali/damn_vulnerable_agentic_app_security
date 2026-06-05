@@ -75,8 +75,8 @@ variable "deploy_apim" {
 
 variable "apim_sku" {
   type        = string
-  default     = "Developer_1"
-  description = "APIM SKU. Developer_1 supports GenAI token-limit policies for the lab. Use Consumption_0 for lowest cost (some policies differ)."
+  default     = "StandardV2_1"
+  description = "APIM SKU. StandardV2_1 provisions faster for classroom cohorts; override to Developer_1 or another supported SKU if your subscription requires it."
 }
 
 variable "apim_publisher_name" {
@@ -95,6 +95,35 @@ variable "ai_gateway_tpm" {
   type        = number
   default     = 20000
   description = "Tokens-per-minute cap enforced by the APIM AI Gateway (V10 token-based rate limiting)."
+}
+
+variable "enable_cohort_mode" {
+  type        = bool
+  default     = false
+  description = "Create a multi-user workshop cohort: per-user Foundry projects, optional per-user hosted apps, and per-user APIs on the shared APIM gateway. Shared AI Search, PostgreSQL, MCP, Key Vault, and monitoring stay singletons."
+}
+
+variable "cohort_user_count" {
+  type        = number
+  default     = 2
+  description = "Number of generated lab users when enable_cohort_mode=true. Defaults to 2 for fast testing; can scale to 60/100 for large sessions."
+
+  validation {
+    condition     = var.cohort_user_count >= 1 && var.cohort_user_count <= 100
+    error_message = "cohort_user_count must be between 1 and 100."
+  }
+}
+
+variable "cohort_user_prefix" {
+  type        = string
+  default     = "user"
+  description = "Prefix for generated lab users. User IDs become user_1, user_2, ... by default."
+}
+
+variable "deploy_cohort_apps" {
+  type        = bool
+  default     = false
+  description = "When true with deploy_app=true and enable_cohort_mode=true, deploy one Zava Container App per generated lab user so each app points at that user's Foundry project while sharing Search/Postgres/MCP/APIM."
 }
 
 variable "pg_sku_name" {
@@ -162,11 +191,6 @@ variable "app_container_image" {
   type        = string
   default     = ""
   description = "Container image for the Zava FastAPI app, e.g. <acr>.azurecr.io/zava-lab:latest. Required when deploy_app=true."
-
-  validation {
-    condition     = var.deploy_app == false || length(var.app_container_image) > 0
-    error_message = "app_container_image is required when deploy_app=true."
-  }
 }
 
 variable "app_offline_mode" {
@@ -186,11 +210,6 @@ variable "pg_app_password" {
   default     = ""
   sensitive   = true
   description = "Password for pg_app_user. Required only when app_offline_mode=false and the hosted app needs PG_APP_CONNECTION."
-
-  validation {
-    condition     = var.deploy_app == false || var.app_offline_mode == true || length(var.pg_app_password) > 0
-    error_message = "pg_app_password is required when deploy_app=true and app_offline_mode=false."
-  }
 }
 
 variable "app_registry_server" {

@@ -186,6 +186,12 @@ The same word, "guardrail," appears in three places in this lab. This mini-flow 
 | **App/API guard** | PII redaction, per-document Prompt Shields call, tool/MCP output re-scan, agent-to-agent handoff scan | Modules 2 / 3 / 4 / 8 | [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py), [src/agents/knowledge/agent.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/knowledge/agent.py) |
 | **Identity-scoped tools/data** | Entra OBO, Postgres RLS, AI Search ACL trimming, MCP allow-list | Modules 4 / 5 | [src/agents/tools/db.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/db.py), [src/agents/tools/search.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/search.py), [src/agents/tools/mcp.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/mcp.py) |
 
+### Security module mini-flows
+
+Use this compact diagram as the module map: it shows the exact service boundary each lesson manipulates, from Foundry guardrails to Entra, APIM, Search, PostgreSQL/MCP, Purview, evaluations, and red teaming.
+
+![Eleven compact module flows showing the enforcement boundary for each security module: Foundry RAI, Prompt Shields, AI Language PII, MCP/Postgres RLS, Entra and AI Search ACLs, APIM and Defender, AGT, Groundedness, evaluations, Purview, and AI red teaming.](assets/diagrams/security-module-flows.svg)
+
 <div class="important" data-title="Are guardrails and Prompt Shields actually added through code?">
 
 > **Yes, but at two different layers.** The production-grade, unavoidable control is added through **infrastructure code**: [src/infra/foundry.tf](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/infra/foundry.tf) creates a `governed` RAI policy with harmful-content filters, `Jailbreak`, `Indirect Attack`, and Protected Material, then attaches it to the Foundry model deployment. The app also has **runtime code** in [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py): when a security toggle is enabled it must call the real Azure AI Content Safety `text:analyze`, `text:shieldPrompt`, Groundedness, or Azure AI Language PII API. Missing Azure configuration fails closed with a setup error; secure checks do not fall back to local regex or keyword heuristics.
@@ -208,7 +214,9 @@ The same word, "guardrail," appears in three places in this lab. This mini-flow 
 | **Entra ID** (OBO/RBAC/Key Vault) + **AI Search document-level security** | V5 broken identity | 5 |
 | **APIM AI gateway** (observability, token rate limiting, key vaulting) + **Defender for Cloud** (attack & insecure-code detection) | V7 insecure infrastructure, V10 no AI gateway | 6 |
 | **Agent governance toolkit** (inventory, policy, posture gate) | V1–V11 governed as an app-level agent system | 7 |
-| **Microsoft Purview** DSPM + **DLP for AI** | V3 PII leakage, V6 data poisoning at tenant scale | 11 |
+| **Evaluations** (safety, groundedness, relevance, agentic probes) | Assurance that the mitigations hold as a regression gate | 9 |
+| **Microsoft Purview** DSPM + **DLP for AI** | V3 PII leakage, V6 data poisoning at tenant scale | 10 |
+| **AI red teaming** | Automated adversarial validation after the controls are in place | 11 |
 
 Then prove it holds with **evaluations** and **AI red teaming**.
 
@@ -422,6 +430,39 @@ python -m src.scripts.seed   # seed Postgres + upload sample docs (incl. one poi
 
 Terraform emits `app_url` when `deploy_app=true`; share that URL with browser-only participants for Part 1. By default the hosted app uses `app_offline_mode=true`, so the vulnerable baseline works immediately with container-local sample data. For Part 2, set `app_offline_mode=false` and provide the PostgreSQL app-role password so the same hosted app uses the Foundry project SDK for model calls, PostgreSQL Flexible Server for data tools, the Microsoft Azure MCP Server when `USE_MCP_TOOLS=true`, and APIM when `ENABLE_AI_GATEWAY=true` plus `AI_GATEWAY_URL` are set.
 
+### Multi-user classroom mode
+
+For a cohort, duplicate only the things learners mutate and keep the expensive data plane shared:
+
+| Scope | Resources | Why |
+|---|---|---|
+| Per user | Foundry project, agents, prompts, guardrail settings, APIM API path, optional hosted app URL | Learners can edit their own project and gateway policy without colliding. |
+| Shared | AI Services account/model deployments, AI Search service/index, PostgreSQL Flexible Server/database, PostgreSQL MCP endpoint, Key Vault, Monitor, APIM instance | Faster deployment, lower quota pressure, and better pedagogy: identity isolation is visible on shared services. |
+
+Start with two generated users (`user_1`, `user_2`) while testing the lab:
+
+```bash
+cd src/infra
+terraform apply \
+    -var deploy_app=true \
+    -var deploy_apim=true \
+    -var enable_cohort_mode=true \
+    -var cohort_user_count=2 \
+    -var deploy_cohort_apps=true \
+    -var app_container_image=<registry>/zava-lab:latest
+```
+
+Terraform emits `cohort_users`, including each user's `foundry_project_endpoint`, APIM gateway base path (`/user-1`, `/user-2`), APIM OpenAI API path (`/user-1/openai`, `/user-2/openai`), app URL, Entra group names, and customer/owner IDs. Scale the same pattern later with `-var cohort_user_count=60` or `100` after the two-user run is clean.
+
+Generate the instructor mapping and optional Entra setup commands with:
+
+```bash
+python -m src.scripts.setup_lab_users --count 2 --tenant-domain <tenant>.onmicrosoft.com
+python -m src.scripts.setup_lab_users --count 2 --tenant-domain <tenant>.onmicrosoft.com --emit-az-cli
+```
+
+The shared PostgreSQL schema includes `owner_user_id`; the Azure seed step enables RLS policies over `owner_user_id` and `customer_id`. The shared AI Search index uses `group_ids`, so `user_1` and `user_2` can query the same index while receiving different documents. If the generic Azure PostgreSQL MCP server cannot set per-call session context for your tenant, put a thin Zava MCP facade in front of it that sets `app.owner_user_id` from the validated Entra token before issuing database queries.
+
 > Short on time or subscription rights? You can still do every module's *before/after* **offline** by flipping its `ENABLE_*` toggle — the Azure wiring sub-section then shows exactly how the same control is enforced on the platform.
 
 | Module | Azure security layer | Closes |
@@ -434,6 +475,7 @@ Terraform emits `app_url` when `deploy_app=true`; share that URL with browser-on
 | 6 | **APIM AI gateway** (observability, rate limiting) + **Defender for Cloud** | V7 insecure infrastructure, V10 no AI gateway |
 | 7 | **Agent governance toolkit** policy + posture gate | V1–V11 governed as an agent system |
 | 8 | **Foundry** Groundedness detection + trusted ingestion | V6 data poisoning |
+| 9 | **Evaluations** safety + quality gates | assurance across V1–V11 |
 | 10 | **Microsoft Purview** DSPM + **DLP for AI** | V3 PII leakage, V6 data poisoning at tenant scale |
 | 11 | **AI red teaming** (automated) | assurance across V1–V11 |
 
@@ -446,6 +488,14 @@ Terraform emits `app_url` when `deploy_app=true`; share that URL with browser-on
 > ⏱️ ~35 min · **Azure layer: Foundry model + agent guardrails** · Fixes **V1 + V2** · OWASP LLM05/09 · Agentic T5/T6
 >
 > **What this module fixes:** the model has **no safety system (V1)** and **no content guardrails (V2)** — so the finance bot answers harmful or off-topic prompts and obeys "ignore your instructions." You add Foundry content filters + guardrails so harmful/off-topic input **and** output are blocked.
+
+### Flow guidance
+
+<div class="tip" data-title="Flow guidance">
+
+> Keep [Security module mini-flows](#security-module-mini-flows) open and follow row **1. Responsible & Safe AI**: user prompt → Foundry RAI policy → governed model. This is the shortest path to remember what you are changing in this module.
+
+</div>
 
 ### Scenario
 
@@ -630,6 +680,14 @@ With just `ENABLE_CONTENT_SAFETY=true`, the **Content Safety** control alone tur
 >
 > **What this module fixes:** the agent can be **jailbroken (V2)** by a user ("ignore previous instructions") and **hijacked by a poisoned document (V6)** during RAG. You turn on Prompt Shields to detect both **direct** and **indirect** prompt-injection attacks.
 
+### Flow guidance
+
+<div class="tip" data-title="Flow guidance">
+
+> Reuse [Security module mini-flows](#security-module-mini-flows), row **2. Prompt Shields**: RAG chunk or user input → ShieldPrompt → agent context. The important boundary is before untrusted text becomes instructions.
+
+</div>
+
 ### Scenario
 
 Two attack shapes: a **direct jailbreak** in the user prompt, and an **indirect injection** hidden inside a retrieved RAG document.
@@ -752,6 +810,14 @@ Flip `SECURE_MODE=true` (or just the V2 toggles), restart, and re-run the **same
 >
 > **What this module fixes:** **sensitive data leaks (V3)** — SSNs, account and card numbers flow into prompts, logs, and replies in clear text. You add PII detection + redaction before the model and before logging.
 
+### Flow guidance
+
+<div class="tip" data-title="Flow guidance">
+
+> Use [Security module mini-flows](#security-module-mini-flows), row **3. PII Protection**: tool output → Azure AI Language PII → redacted reply/log. This module is a data-transformation guard, not a model filter.
+
+</div>
+
 ### Scenario
 
 The assistant logs and echoes PII verbatim, and leaks its system prompt when asked.
@@ -859,6 +925,14 @@ With redaction on, the same balance request now shows explicit `pii: redacted` e
 > ⏱️ ~45 min · **Azure layer: secure MCP + least-privilege** · Fixes **V4 + V8 + V9 + V11** · OWASP LLM06 · Agentic T2/T10/T11/T12
 >
 > **What this module fixes:** the agent's **tools are too powerful (V4)** — admin DB access, SQL injection, and money transfers with no approval — it **runs model-written code with no sandbox (V8)**, it **trusts an untrusted MCP server (V9)**, and one **agent blindly acts on another agent's forged instruction (V11)**. You scope tools to least privilege, add a human-in-the-loop confirmation, sandbox code, lock down MCP, and re-scan inter-agent messages.
+
+### Flow guidance
+
+<div class="tip" data-title="Flow guidance">
+
+> Use [Security module mini-flows](#security-module-mini-flows), row **4. Tools, MCP, HITL, Code**: agent action → policy gate → PostgreSQL MCP/RLS. This row is the map for every tool boundary you tighten here.
+
+</div>
 
 ### Scenario
 
@@ -1060,6 +1134,14 @@ The biggest behavioral change is `transfer_funds`. With HITL on, the agent stops
 >
 > **What this module fixes:** **identity is broken (V5)** — the API blindly trusts a client-sent `customer_id`/`groups` and there's no real user identity, so anyone can impersonate anyone and read restricted documents. You add Entra ID On-Behalf-Of auth and document-level security trimming.
 
+### Flow guidance
+
+<div class="tip" data-title="Flow guidance">
+
+> Use [Security module mini-flows](#security-module-mini-flows), row **5. Entra + Search Security**: signed user → Entra OBO → AI Search `group_ids` ACL. This is the identity path that makes Postgres RLS and MCP scoping meaningful too.
+
+</div>
+
 ### Scenario
 
 The API trusts the `customer_id` and `groups` in the **request body** — anyone can impersonate anyone. RAG returns documents the user isn't allowed to see.
@@ -1193,6 +1275,14 @@ Re-run the IDOR from Part 1. Signed in as `CUST-1001`, the request to read `CUST
 >
 > **What this module fixes:** the **hosting infrastructure is exposed (V7)** — public endpoints, no monitoring, leaky errors — and there's **no AI gateway (V10)**, so model keys sit in the app with no throttling or audit. You front everything with an APIM AI gateway and turn on Defender + monitoring.
 
+### Flow guidance
+
+<div class="tip" data-title="Flow guidance">
+
+> Use [Security module mini-flows](#security-module-mini-flows), row **6. APIM + Defender**: browser/API → APIM gateway → Monitor/Defender. This module puts the governed choke point in front of model and tool traffic.
+
+</div>
+
 ### Scenario
 
 Models and tool endpoints are exposed **directly**: the model key lives in the app, there's no central auth, no token throttling, and no audit. Endpoints are public with verbose errors.
@@ -1296,6 +1386,14 @@ Authenticated calls route via the gateway with the key hidden; unauthenticated o
 >
 > **What this module adds:** every prior module flipped *one* control. This module steps back and asks **"is the whole agent system governed?"** — you build an **agent inventory**, write a machine-readable **policy**, and run a **posture check** as a CI gate that maps every gap to an OWASP Agentic threat (`Tn`). This app-level governance check comes before Purview because it governs the code, agents, tools, and prompts you just hardened; Purview later governs enterprise data and tenant-wide DLP.
 
+### Flow guidance
+
+<div class="tip" data-title="Flow guidance">
+
+> Use [Security module mini-flows](#security-module-mini-flows), row **7. Agent Governance Toolkit**: agent spec → AGT policy → posture decision. The diagram helps you read the policy as a system-wide control, not one more app toggle.
+
+</div>
+
 Apply Microsoft's [agent-governance-toolkit](https://github.com/microsoft/agent-governance-toolkit) (AGT) — which targets the **OWASP Agentic Top 10** and ships native middleware for the Microsoft Agent Framework — to Zava's five agents and their tools.
 
 ### 1 · The policy (the answer key, made machine-readable)
@@ -1392,6 +1490,14 @@ agt lint-policy src/agents/governance/                          # validate the p
 >
 > **What this module fixes:** goes deep on **data poisoning (V6)** — checking that model answers are **grounded** in trusted source documents so a poisoned or fabricated claim can't slip through.
 
+### Flow guidance
+
+<div class="tip" data-title="Flow guidance">
+
+> Use [Security module mini-flows](#security-module-mini-flows), row **8. Poisoning + Groundedness**: retrieved doc → groundedness check → source-backed answer. Read this beside Module 2 to see why shielding and groundedness are complementary.
+
+</div>
+
 ### Scenario
 
 Untrusted ingestion lets poisoned content into the RAG index, and the model makes claims its sources don't support.
@@ -1465,6 +1571,14 @@ Ask the same rate-disclosure question again. The poisoned chunk is now dropped b
 
 > ⏱️ Extended · Assurance · Code-deployable
 
+### Flow guidance
+
+<div class="tip" data-title="Flow guidance">
+
+> Use [Security module mini-flows](#security-module-mini-flows), row **9. Evaluations**: attack set → eval runner → pass/fail metrics. This is the feedback loop that tells you whether the earlier rows still hold.
+
+</div>
+
 Run **safety + quality evaluations** (groundedness, relevance, content-harm, indirect-attack) with `azure-ai-evaluation` / Foundry evaluations, and gate changes on the scores. Suites live in `src/evals/`.
 
 ```bash
@@ -1507,6 +1621,14 @@ The `agentic` row is the one to watch: in the baseline a poisoned doc drives a c
 >
 > **What this module fixes:** governs the same **PII (V3)** and **data-poisoning (V6)** risks at enterprise scale — discovering, labelling, and applying DLP to sensitive data across the org, beyond the per-app guards of Modules 3, 7, and 8.
 
+### Flow guidance
+
+<div class="tip" data-title="Flow guidance">
+
+> Use [Security module mini-flows](#security-module-mini-flows), row **10. Purview**: tenant data → DSPM/DLP → governed data use. This is the enterprise data-governance layer around the app-level guards.
+
+</div>
+
 ### Scenario
 
 Even with PII redaction and an agent-governance posture gate, the org needs **discovery, classification, labeling, and DLP** across AI interactions and data stores.
@@ -1548,6 +1670,14 @@ Use this as the screenshot/click-through alternative when tenant-admin rights or
 ## Module 11 — AI red teaming (automated)
 
 > ⏱️ Extended · Assurance · Code-deployable
+
+### Flow guidance
+
+<div class="tip" data-title="Flow guidance">
+
+> Use [Security module mini-flows](#security-module-mini-flows), row **11. AI Red Teaming**: adversarial prompts → red-team run → remediation list. This is the automated adversary pass over the fully governed app.
+
+</div>
 
 Run the **Azure AI Red Teaming Agent** (PyRIT-backed) after Purview so the scan covers the fully governed app: Foundry guardrails, Entra/RBAC, MCP scoping, APIM, evaluations, and tenant-level data governance. It automatically scans across risk categories and attack strategies, producing a coverage scorecard you can re-run as a regression gate. Scans live in `src/redteam/`.
 
