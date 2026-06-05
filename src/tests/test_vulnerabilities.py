@@ -327,6 +327,21 @@ def test_v9_mcp_marks_output_untrusted_when_enabled(monkeypatch):
     assert res["untrusted"] is True  # guard middleware must re-scan it
 
 
+def test_v9_chat_routes_account_reads_through_mcp_when_enabled(monkeypatch):
+    orch, _, _ = _reload_with(
+        monkeypatch,
+        USE_MCP_TOOLS="true",
+        ENABLE_MCP_TOOL_SECURITY="true",
+        ENABLE_TOOL_LEAST_PRIV="true",
+    )
+
+    res = orch.handle_turn("Show my account balances", _ctx())
+
+    assert not res.blocked
+    assert any("MCP get_accounts" in event for event in res.events)
+    assert "ACC-100001" in res.answer
+
+
 def test_v9_guard_rescans_poisoned_mcp_output_when_enabled(monkeypatch):
     _reload_with(monkeypatch, ENABLE_MCP_TOOL_SECURITY="true", ENABLE_PROMPT_SHIELDS="true")
     from src.agents.guard.guard import SafetyViolation, scan_tool_output

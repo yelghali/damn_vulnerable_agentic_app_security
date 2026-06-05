@@ -79,7 +79,9 @@ def _server_url() -> str:
 
 
 def _is_trusted(server_url: str) -> bool:
-    return server_url in _TRUSTED_SERVERS
+    settings = get_settings()
+    configured = {s.strip().rstrip("/") for s in settings.pg_mcp_server_url.split(",") if s.strip()}
+    return server_url.rstrip("/") in (_TRUSTED_SERVERS | configured)
 
 
 def call_mcp_tool(name: str, ctx: AgentContext, **kwargs: Any) -> dict[str, Any]:

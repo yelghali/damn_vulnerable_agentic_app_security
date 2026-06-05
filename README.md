@@ -120,14 +120,18 @@ This stands up the Foundry project + model deployments, Azure AI Search, Postgre
 Flexible Server, Blob Storage, Key Vault, APIM (AI gateway), the **Microsoft Azure
 MCP Server** on Azure Container Apps (the agents' PostgreSQL tool), and monitoring.
 Copy the emitted outputs into `.env` (including `pg_mcp_server_url` ->
-`PG_MCP_SERVER_URL`) and set `OFFLINE_MODE=false`. See
+`PG_MCP_SERVER_URL`, `ai_gateway_url` -> `AI_GATEWAY_URL`, and the PostgreSQL
+connection strings), set `OFFLINE_MODE=false`, then run `python -m src.scripts.seed`
+to seed PostgreSQL and AI Search. The same FastAPI app now calls Foundry models,
+Azure Database for PostgreSQL, the Microsoft Azure MCP Server when
+`USE_MCP_TOOLS=true`, and APIM when `ENABLE_AI_GATEWAY=true`. See
 [docs/workshop.md](docs/workshop.md) for region/quota prerequisites and the
 tenant-admin prep steps (Entra app registration, Purview) with fallbacks.
 
 ### Make the agents appear in the Foundry portal
 
-The app calls Foundry models directly; to also create **persistent agents** that
-show up in the portal **Agents** tab — the Knowledge agent wired to Azure AI Search
+The FastAPI lab can call Foundry directly or through APIM; to also create
+**persistent agents** that show up in the portal **Agents** tab — the Knowledge agent wired to Azure AI Search
 and the Accounts/Transactions agents wired to the Microsoft Azure MCP Server
 (`postgres`) — run:
 

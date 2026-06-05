@@ -11,7 +11,24 @@ from src.agents.tools.db import (
     get_customer_profile,
     get_transactions,
 )
+from src.agents.guard.guard import SafetyViolation, scan_tool_output
+from src.agents.tools.mcp import call_mcp_tool
 from src.agents.types import AgentContext, TurnResult
+from src.config import get_settings
+
+
+def _call_data_tool(name: str, ctx: AgentContext, **kwargs) -> tuple[object, str]:
+    settings = get_settings()
+    if settings.use_mcp_tools and name in {"get_accounts", "get_transactions", "get_credit_score"}:
+        result = call_mcp_tool(name, ctx, **kwargs)
+        scan_tool_output(result, source="mcp")
+        return result["data"], f"accounts: MCP {name}({kwargs}) via {result['server']}"
+    local = {
+        "get_accounts": get_accounts,
+        "get_transactions": get_transactions,
+        "get_credit_score": get_credit_score,
+    }[name]
+    return local(**kwargs), f"accounts: {name}({next(iter(kwargs.values()), '')})"
 
 
 def _target_customer(message: str, ctx: AgentContext) -> str | None:
@@ -49,28 +66,31 @@ def run(message: str, ctx: AgentContext) -> TurnResult:
                 f"Address: {data.get('address', 'n/a')}"
             ) if data else "No profile found."
         elif "credit" in low or "score" in low:
-            data = get_credit_score(customer_id, caller_id=ctx.customer_id)
-            events.append(f"accounts: get_credit_score({customer_id})")
+            data, event = _call_data_tool("get_credit_score", ctx, customer_id=customer_id, caller_id=ctx.customer_id)
+            events.append(event)
             body = f"Credit score: {data.get('score', 'n/a')} ({data.get('bureau', '')})"
         elif "transaction" in low or "history" in low:
             acct = re.search(r"\b(ACC-\d+)\b", message, re.IGNORECASE)
             acct_id = acct.group(1).upper() if acct else None
             if not acct_id:
-                accts = get_accounts(customer_id, caller_id=ctx.customer_id)
+                accts, event = _call_data_tool("get_accounts", ctx, customer_id=customer_id, caller_id=ctx.customer_id)
                 acct_id = accts[0]["account_id"] if accts else None
-            txns = get_transactions(acct_id, caller_id=ctx.customer_id) if acct_id else []
-            events.append(f"accounts: get_transactions({acct_id})")
+            if acct_id:
+                txns, event = _call_data_tool("get_transactions", ctx, account_id=acct_id, caller_id=ctx.customer_id)
+            else:
+                txns, event = [], "accounts: get_transactions(None)"
+            events.append(event)
             body = "\n".join(
                 f"- {t['posted_at']} {t['amount']} {t['description']}" for t in txns
             ) or "No transactions found."
         else:
-            accts = get_accounts(customer_id, caller_id=ctx.customer_id)
-            events.append(f"accounts: get_accounts({customer_id})")
+            accts, event = _call_data_tool("get_accounts", ctx, customer_id=customer_id, caller_id=ctx.customer_id)
+            events.append(event)
             body = "\n".join(
                 f"- {a['account_id']} {a['account_type']}: {a['balance']} {a['currency']}"
                 for a in accts
             ) or "No accounts found."
-    except ToolError as e:
+    except (ToolError, SafetyViolation) as e:
         return TurnResult(answer=str(e), agent="accounts", events=events, blocked=True)
 
     return TurnResult(answer=body, agent="accounts", events=events)

@@ -21,7 +21,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from src.config import get_settings
 
@@ -49,6 +49,30 @@ def _offline_conn() -> sqlite3.Connection:
     return conn
 
 
+def _postgres_conn():
+    """Connect to Azure Database for PostgreSQL when OFFLINE_MODE=false.
+
+    LAB-VULN(V4): the vulnerable baseline deliberately uses the admin
+    connection. The secure path uses the least-privilege application role that
+    the Azure seed step creates.
+    """
+    settings = get_settings()
+    conninfo = (
+        settings.pg_app_connection
+        if settings.enable_tool_least_priv
+        else settings.pg_admin_connection
+    )
+    if not conninfo:
+        which = "PG_APP_CONNECTION" if settings.enable_tool_least_priv else "PG_ADMIN_CONNECTION"
+        raise ToolError(f"{which} is required when OFFLINE_MODE=false.")
+    try:
+        import psycopg  # noqa: PLC0415
+        from psycopg.rows import dict_row  # noqa: PLC0415
+    except ImportError as exc:  # pragma: no cover - dependency is optional in offline tests
+        raise ToolError("Install psycopg[binary] to use Azure PostgreSQL.") from exc
+    return psycopg.connect(conninfo, row_factory=dict_row)
+
+
 def reset_offline_db() -> None:
     """Drop and reseed the local SQLite DB (used by tests/scripts)."""
     with _lock:
@@ -57,11 +81,21 @@ def reset_offline_db() -> None:
     _offline_conn().close()
 
 
+def _conn():
+    settings = get_settings()
+    return _offline_conn() if settings.offline_mode else _postgres_conn()
+
+
 # ---------------------------------------------------------------------------
 # Internal query helpers
 # ---------------------------------------------------------------------------
-def _rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
+def _rows_to_dicts(rows: Iterable[Any]) -> list[dict[str, Any]]:
     return [dict(r) for r in rows]
+
+
+def _ph() -> str:
+    """Parameter placeholder for the active database driver."""
+    return "?" if get_settings().offline_mode else "%s"
 
 
 def _authorize(caller_id: str | None, customer_id: str) -> None:
@@ -86,13 +120,14 @@ def _authorize(caller_id: str | None, customer_id: str) -> None:
 def get_accounts(customer_id: str, caller_id: str | None = None) -> list[dict[str, Any]]:
     """Return accounts + balances for a customer."""
     _authorize(caller_id, customer_id)
-    conn = _offline_conn()
+    conn = _conn()
     settings = get_settings()
+    ph = _ph()
     try:
         if settings.enable_tool_least_priv:
             cur = conn.execute(
                 "SELECT account_id, account_type, balance, currency "
-                "FROM accounts WHERE customer_id = ?",
+                f"FROM accounts WHERE customer_id = {ph}",
                 (customer_id,),
             )
         else:
@@ -112,13 +147,14 @@ def get_transactions(
     account_id: str, limit: int = 20, caller_id: str | None = None
 ) -> list[dict[str, Any]]:
     """Return recent transactions for an account."""
-    conn = _offline_conn()
+    conn = _conn()
     settings = get_settings()
+    ph = _ph()
     try:
         if settings.enable_tool_least_priv:
             # Verify ownership before returning rows.
             owner = conn.execute(
-                "SELECT customer_id FROM accounts WHERE account_id = ?",
+                f"SELECT customer_id FROM accounts WHERE account_id = {ph}",
                 (account_id,),
             ).fetchone()
             if owner is None:
@@ -126,8 +162,8 @@ def get_transactions(
             _authorize(caller_id, owner["customer_id"])
             cur = conn.execute(
                 "SELECT txn_id, account_id, amount, description, posted_at "
-                "FROM transactions WHERE account_id = ? "
-                "ORDER BY posted_at DESC LIMIT ?",
+                f"FROM transactions WHERE account_id = {ph} "
+                f"ORDER BY posted_at DESC LIMIT {ph}",
                 (account_id, limit),
             )
         else:
@@ -151,13 +187,14 @@ def get_customer_profile(customer_id: str, caller_id: str | None = None) -> dict
     with no redaction. Module 3 redacts them on the way out.
     """
     _authorize(caller_id, customer_id)
-    conn = _offline_conn()
+    conn = _conn()
     settings = get_settings()
+    ph = _ph()
     try:
         if settings.enable_tool_least_priv:
             row = conn.execute(
                 "SELECT customer_id, full_name, email, ssn, address "
-                "FROM customers WHERE customer_id = ?",
+                f"FROM customers WHERE customer_id = {ph}",
                 (customer_id,),
             ).fetchone()
         else:
@@ -174,11 +211,12 @@ def get_customer_profile(customer_id: str, caller_id: str | None = None) -> dict
 def get_credit_score(customer_id: str, caller_id: str | None = None) -> dict[str, Any]:
     """Return a customer's (sensitive) credit score."""
     _authorize(caller_id, customer_id)
-    conn = _offline_conn()
+    conn = _conn()
+    ph = _ph()
     try:
         row = conn.execute(
             "SELECT customer_id, score, bureau, updated_at "
-            "FROM credit_scores WHERE customer_id = ?",
+            f"FROM credit_scores WHERE customer_id = {ph}",
             (customer_id,),
         ).fetchone()
         return dict(row) if row else {}
@@ -205,11 +243,12 @@ def transfer_funds(
         raise ToolError(
             "transfer_funds requires human approval (HITL) before execution."
         )
-    conn = _offline_conn()
+    conn = _conn()
+    ph = _ph()
     try:
         if settings.enable_tool_least_priv:
             src = conn.execute(
-                "SELECT customer_id, balance FROM accounts WHERE account_id = ?",
+                f"SELECT customer_id, balance FROM accounts WHERE account_id = {ph}",
                 (from_account,),
             ).fetchone()
             if src is None:
@@ -218,11 +257,11 @@ def transfer_funds(
             if src["balance"] < amount:
                 raise ToolError("Insufficient funds.")
             conn.execute(
-                "UPDATE accounts SET balance = balance - ? WHERE account_id = ?",
+                f"UPDATE accounts SET balance = balance - {ph} WHERE account_id = {ph}",
                 (amount, from_account),
             )
             conn.execute(
-                "UPDATE accounts SET balance = balance + ? WHERE account_id = ?",
+                f"UPDATE accounts SET balance = balance + {ph} WHERE account_id = {ph}",
                 (amount, to_account),
             )
         else:
