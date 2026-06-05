@@ -125,9 +125,9 @@ def _azure_search(
     )
     search_filter: str | None = None
     if settings.enable_doc_security:
-        groups = ", ".join(g.replace("'", "") for g in (caller_groups or []))
+        groups = ",".join(g.replace("'", "").replace(",", "") for g in (caller_groups or []))
         # Only return docs with no ACL or whose group_ids intersect the caller's.
-        search_filter = f"group_ids/any() eq false or group_ids/any(g: search.in(g, '{groups}'))"
+        search_filter = f"not group_ids/any() or group_ids/any(g: search.in(g, '{groups}', ','))"
     results = client.search(
         search_text=query,
         filter=search_filter,

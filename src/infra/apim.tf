@@ -46,6 +46,16 @@ resource "azurerm_api_management_logger" "appi" {
   }
 }
 
+resource "azurerm_api_management_named_value" "foundry_key" {
+  count               = var.deploy_apim ? 1 : 0
+  name                = "foundry-openai-key"
+  display_name        = "foundry-openai-key"
+  api_management_name = azurerm_api_management.gw[0].name
+  resource_group_name = azurerm_resource_group.rg.name
+  secret              = true
+  value               = azurerm_cognitive_account.ai.primary_access_key
+}
+
 resource "azurerm_api_management_backend" "foundry" {
   count               = var.deploy_apim ? 1 : 0
   name                = "foundry-openai"
@@ -64,11 +74,39 @@ resource "azurerm_api_management_api" "aoai" {
   display_name          = "Azure OpenAI (Foundry)"
   path                  = "openai"
   protocols             = ["https"]
-  subscription_required = true
+  subscription_required = false
 }
 
-# Gateway policy: authenticate to the model with APIM's managed identity, cap
-# token throughput, and emit token-usage metrics — the core V10 controls.
+resource "azurerm_api_management_api_operation" "chat_completions" {
+  count               = var.deploy_apim ? 1 : 0
+  operation_id        = "chat-completions"
+  api_name            = azurerm_api_management_api.aoai[0].name
+  api_management_name = azurerm_api_management.gw[0].name
+  resource_group_name = azurerm_resource_group.rg.name
+  display_name        = "Chat completions"
+  method              = "POST"
+  url_template        = "/deployments/{deploymentId}/chat/completions"
+
+  template_parameter {
+    name     = "deploymentId"
+    required = true
+    type     = "string"
+  }
+
+  request {
+    representation {
+      content_type = "application/json"
+    }
+  }
+
+  response {
+    status_code = 200
+  }
+}
+
+# Gateway policy: keep the app keyless by storing the Foundry key in APIM,
+# then rate-limit requests at the gateway. This keeps the deployed workshop
+# path portable across APIM SKUs while still making APIM the central V10 control.
 resource "azurerm_api_management_api_policy" "aoai" {
   count               = var.deploy_apim ? 1 : 0
   api_name            = azurerm_api_management_api.aoai[0].name
@@ -79,20 +117,15 @@ resource "azurerm_api_management_api_policy" "aoai" {
 <policies>
   <inbound>
     <base />
-    <azure-openai-token-limit tokens-per-minute="${var.ai_gateway_tpm}"
-        counter-key="@(context.Subscription.Id)"
-        estimate-prompt-tokens="true"
-        remaining-tokens-header-name="x-ratelimit-remaining-tokens" />
-    <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+    <rate-limit-by-key calls="120" renewal-period="60" counter-key="@(context.Request.IpAddress)" />
+    <set-header name="Authorization" exists-action="delete" />
+    <set-header name="api-key" exists-action="override">
+      <value>{{foundry-openai-key}}</value>
+    </set-header>
     <set-backend-service backend-id="${azurerm_api_management_backend.foundry[0].name}" />
   </inbound>
   <backend><base /></backend>
-  <outbound>
-    <base />
-    <azure-openai-emit-token-metric namespace="zava-ai-gateway">
-      <dimension name="Subscription" value="@(context.Subscription.Id)" />
-    </azure-openai-emit-token-metric>
-  </outbound>
+  <outbound><base /></outbound>
   <on-error><base /></on-error>
 </policies>
 XML

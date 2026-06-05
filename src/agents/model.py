@@ -163,6 +163,7 @@ def compose_answer(system_prompt: str, user_message: str, context: str = "") -> 
             azure_endpoint=gateway_url,
             azure_ad_token_provider=token_provider,
             api_version=_AOAI_API_VERSION,
+            timeout=60.0,
         )
     else:
         # LAB-VULN(V10): app talks to the deployment directly (static key path).
