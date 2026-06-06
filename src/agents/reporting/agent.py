@@ -43,7 +43,7 @@ def _extract_code(message: str) -> str | None:
 
 def run(message: str, ctx: AgentContext) -> TurnResult:
     events: list[str] = []
-    accounts = get_accounts(ctx.customer_id or "", caller_id=ctx.customer_id)
+    accounts = get_accounts(ctx.customer_id or "", caller_id=ctx.customer_id, caller_groups=ctx.groups)
 
     injected = _extract_code(message)
     try:

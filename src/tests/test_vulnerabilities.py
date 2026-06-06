@@ -250,6 +250,18 @@ def test_tool_agent_answers_are_not_rephrased_by_model(monkeypatch):
     assert report.answer.startswith("Report:")
 
 
+def test_manager_report_uses_wildcard_account_scope(monkeypatch):
+    orch, _, _ = _reload_with(monkeypatch, ENABLE_TOOL_LEAST_PRIV="true")
+
+    report = orch.handle_turn(
+        "Generate a summary report of my spending.",
+        _ctx(customer_id="*", groups=["retail-customers", "private-client", "zava-managers"]),
+    )
+
+    assert report.agent == "reporting"
+    assert "Report: 4 account(s)" in report.answer
+
+
 def test_benign_fee_prompt_routes_to_knowledge(monkeypatch):
     orch, _, _ = _reload_with(monkeypatch)
 
@@ -550,6 +562,15 @@ def test_v5_admin_can_read_other_customer_when_tool_security_enabled(monkeypatch
 
     assert rows
     assert rows[0]["account_id"].startswith("ACC-200")
+
+
+def test_v5_admin_wildcard_scope_lists_all_accounts(monkeypatch):
+    _, db, _ = _reload_with(monkeypatch, ENABLE_TOOL_LEAST_PRIV="true")
+
+    rows = db.get_accounts("*", caller_id="*", caller_groups=["zava-managers"])
+
+    account_ids = {row["account_id"] for row in rows}
+    assert {"ACC-100001", "ACC-100002", "ACC-200001", "ACC-200002"}.issubset(account_ids)
 
 
 def test_v5_doc_security_without_azure_search_fails_closed(monkeypatch):

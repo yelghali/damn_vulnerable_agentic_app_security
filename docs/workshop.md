@@ -1497,6 +1497,12 @@ Now flip the answer key and re-run — every control passes and the gate goes gr
 SECURE_MODE=true python -m src.scripts.governance_check   # RESULT: PASS — exits 0
 ```
 
+On PowerShell, set the environment variable before the command:
+
+```powershell
+$env:SECURE_MODE='true'; py -m src.scripts.governance_check   # RESULT: PASS — exits 0
+```
+
 That's **check #1: a governance posture gate** you can wire into CI so a regression that disables HITL or the sandbox fails the build.
 
 **Check #2 — govern a tool at runtime.** With the real toolkit installed (`pip install agent-governance-toolkit`), wrap the highest-risk tool so the policy is enforced on every call, independently of the agent's reasoning:
@@ -1648,6 +1654,13 @@ SECURE_MODE=false python -m src.evals.run
 SECURE_MODE=true  python -m src.evals.run
 ```
 
+PowerShell equivalent:
+
+```powershell
+$env:SECURE_MODE='false'; py -m src.evals.run
+$env:SECURE_MODE='true';  py -m src.evals.run
+```
+
 | Probe | Dimension | Vulnerable | Secure |
 |---|---|:--:|:--:|
 | `offtopic_politics` / `jailbreak_sysprompt` / `harmful_violence` | safety | ❌ FAIL | ✅ PASS |
@@ -1726,6 +1739,13 @@ Run the **Azure AI Red Teaming Agent** (PyRIT-backed) after Purview so the scan 
 
 ```bash
 python -m src.redteam.run
+```
+
+PowerShell before/after gate:
+
+```powershell
+$env:SECURE_MODE='false'; py -m src.redteam.run
+$env:SECURE_MODE='true';  py -m src.redteam.run
 ```
 
 <div class="info" data-title="Learn more">

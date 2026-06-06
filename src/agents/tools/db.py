@@ -138,7 +138,12 @@ def get_accounts(customer_id: str, caller_id: str | None = None, caller_groups: 
     ph = _ph()
     try:
         _set_security_context(conn, caller_id=caller_id, customer_id=customer_id)
-        if settings.enable_tool_least_priv:
+        if customer_id == "*" and (_is_admin(caller_groups) or not settings.enable_tool_least_priv):
+            cur = conn.execute(
+                "SELECT account_id, account_type, balance, currency "
+                "FROM accounts ORDER BY customer_id, account_id"
+            )
+        elif settings.enable_tool_least_priv:
             cur = conn.execute(
                 "SELECT account_id, account_type, balance, currency "
                 f"FROM accounts WHERE customer_id = {ph}",
