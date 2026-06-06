@@ -214,14 +214,15 @@ function renderIdentity(info) {
       ? `${info.name || info.user_id || "signed in"} · ${groups}`
       : "local test identity · editable form values";
   }
-  if (!box) return;
-  box.innerHTML = `
-    <div><b>${info.authenticated ? (info.name || "Authenticated user") : "Local / spoofable identity"}</b></div>
-    <div>source: ${info.auth_source}</div>
-    <div>customer: ${info.customer_id || "n/a"}</div>
-    <div>Zava groups: ${groups}</div>
-    <div>JWT/API token: ${info.token_present ? "available" : "not available"}</div>
-  `;
+  if (box) {
+    box.innerHTML = `
+      <div><b>${info.authenticated ? (info.name || "Authenticated user") : "Local / spoofable identity"}</b></div>
+      <div>source: ${info.auth_source}</div>
+      <div>customer: ${info.customer_id || "n/a"}</div>
+      <div>Zava groups: ${groups}</div>
+      <div>JWT/API token: ${info.token_present ? "available" : "not available"}</div>
+    `;
+  }
   const actions = $("identity-actions");
   if (actions) {
     actions.innerHTML = info.authenticated
