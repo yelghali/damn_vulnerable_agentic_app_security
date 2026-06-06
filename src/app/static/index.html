@@ -14,8 +14,9 @@
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
     header {
       padding: 14px 22px; background: linear-gradient(90deg, #1a1d24, #20232d);
-      border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px;
+      border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
     }
+    .brand { display: flex; align-items: center; gap: 14px; min-width: 220px; }
     .logo {
       width: 34px; height: 34px; border-radius: 9px; flex: none;
       background: linear-gradient(135deg, var(--accent), var(--accent-2));
@@ -23,16 +24,23 @@
     }
     header h1 { font-size: 16px; margin: 0; font-weight: 650; }
     header .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .top-status { flex: 1; min-width: 360px; display: grid; gap: 8px; justify-items: end; }
+    .session-bar {
+      width: min(100%, 760px); display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px;
+      padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(20, 23, 29, .72);
+      font-size: 12px; color: var(--muted);
+    }
+    .session-bar input { padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border); background: #14171d; color: var(--text); width: 128px; }
+    .session-bar a { color: #93c5fd; }
+    .pill { background: #243047; color: #cdd6ee; padding: 3px 8px; border-radius: 999px; }
+    .identity-summary { color: #cbd5e1; }
     .vuln-badge { color: var(--off); font-weight: 700; }
     .secure-badge { color: var(--on); font-weight: 700; }
-    .layout { display: grid; grid-template-columns: 1fr 320px; gap: 18px; max-width: 1180px; margin: 18px auto; padding: 0 18px; }
-    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr) 410px; gap: 18px; max-width: 1320px; margin: 18px auto; padding: 0 18px; }
+    @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } .top-status { justify-items: stretch; } .session-bar { justify-content: flex-start; } }
 
-    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }
-    .chat { display: flex; flex-direction: column; min-height: 70vh; }
-    .identity { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); }
-    .identity input { padding: 6px 8px; border-radius: 7px; border: 1px solid var(--border); background: #14171d; color: var(--text); width: 130px; }
-    .identity .pill { background: #243047; color: #cdd6ee; padding: 3px 8px; border-radius: 20px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+    .chat { display: flex; flex-direction: column; min-height: calc(100vh - 128px); }
 
     #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 4px; }
     .msg { padding: 10px 14px; border-radius: 12px; margin: 2px 0; white-space: pre-wrap; max-width: 88%; line-height: 1.45; font-size: 14px; }
@@ -55,7 +63,9 @@
     button:hover { filter: brightness(1.08); }
     button.ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); font-weight: 500; }
 
+    .side { align-self: start; max-height: calc(100vh - 128px); overflow-y: auto; }
     .side h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 10px; }
+    .side h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 12px 0 8px; }
     .side section { padding: 14px 16px; border-bottom: 1px solid var(--border); }
     .side section:last-child { border-bottom: 0; }
     .toggles { display: grid; grid-template-columns: 1fr; gap: 6px; }
@@ -69,7 +79,7 @@
     .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-left: 8px; }
     .dot.on { background: var(--on); box-shadow: 0 0 6px var(--on); }
     .dot.off { background: var(--off); }
-    .chips { display: flex; flex-direction: column; gap: 7px; }
+    .chips { display: grid; grid-template-columns: 1fr; gap: 7px; }
     .chip {
       text-align: left; background: #20131a; border: 1px solid #5b2433; color: #f7b9c5;
       padding: 8px 10px; border-radius: 9px; font-size: 12px; cursor: pointer; line-height: 1.3;
@@ -93,24 +103,30 @@
 </head>
 <body>
   <header>
-    <div class="logo">Z</div>
-    <div>
-      <h1>Zava Wealth Advisor</h1>
-      <div class="sub" id="mode-sub">Damn Vulnerable Agentic App</div>
+    <div class="brand">
+      <div class="logo">Z</div>
+      <div>
+        <h1>Zava Wealth Advisor</h1>
+        <div class="sub">Damn Vulnerable Agentic App</div>
+      </div>
+    </div>
+    <div class="top-status">
+      <div class="sub" id="mode-sub">loading lab mode...</div>
+      <div class="session-bar">
+        <span>Acting as</span>
+        <input id="customer" type="text" value="CUST-1001" title="customer_id sent to the API (no token validation in the baseline — V5)" />
+        <span>groups</span>
+        <input id="groups" type="text" value="retail-customers" />
+        <span class="pill" id="identity-pill" title="The baseline trusts these client-supplied values — that's vulnerability V5 (IDOR).">client-supplied &#9888;</span>
+        <span class="identity-summary" id="identity-summary">checking identity...</span>
+        <span id="identity-actions">loading...</span>
+      </div>
     </div>
   </header>
 
   <div class="layout">
     <!-- Chat -->
     <div class="card chat">
-      <div class="identity">
-        <span>Signed-in as</span>
-        <input id="customer" type="text" value="CUST-1001" title="customer_id sent to the API (no token validation in the baseline — V5)" />
-        <span>groups</span>
-        <input id="groups" type="text" value="retail-customers" />
-        <span class="pill" title="The baseline trusts these client-supplied values — that's vulnerability V5 (IDOR).">client-supplied &#9888;</span>
-      </div>
-
       <div id="log"></div>
 
       <div id="approval">
@@ -128,6 +144,14 @@
 
     <!-- Side panel -->
     <div class="card side">
+      <section>
+        <h3>Prompt library</h3>
+        <div class="hint">Pick a prompt, flip one control, then run it again to see the before/after.</div>
+        <h4>Exploit checks</h4>
+        <div class="chips" id="exploits"></div>
+        <h4>Normal user asks</h4>
+        <div class="chips" id="benign"></div>
+      </section>
       <section>
         <h3>Security posture</h3>
         <div class="hint">Local lab control panel. Use it to follow MOAW module-by-module, or flip every control on as the answer key.</div>
@@ -152,18 +176,9 @@
         <div class="mini" id="mode-switch">loading&hellip;</div>
         <div class="hint">For browser-only labs, deploy paired vulnerable and secure apps or revisions, then link them here.</div>
       </section>
-      <section>
-        <h3>Try an exploit &#128275;</h3>
-        <div class="chips" id="exploits"></div>
-        <div class="hint">Click a chip to send it immediately. In the <b>vulnerable</b> baseline these succeed. After you remediate each module (flip the toggle / harden the code), they should be blocked or redacted.</div>
-      </section>
-      <section>
-        <h3>Benign examples</h3>
-        <div class="chips" id="benign"></div>
-      </section>
     </div>
   </div>
 
-  <script src="/static/app.js?v=2026-06-runtime-toggles"></script>
+  <script src="/static/app.js?v=2026-06-ui-layout"></script>
 </body>
 </html>

@@ -244,6 +244,7 @@ def test_runtime_lab_toggles_can_iterate_controls(monkeypatch):
     baseline = client.get("/api/config").json()
     assert baseline["runtime_toggles_allowed"] is True
     assert baseline["content_safety"] is False
+    assert baseline["model_label"] == "local/phi-3.5-mini"
 
     all_on = client.post("/api/config/toggles", json={"secure_mode": True}).json()
     assert all_on["secure_mode"] is True

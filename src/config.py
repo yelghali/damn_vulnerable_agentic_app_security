@@ -186,14 +186,20 @@ class Settings(BaseSettings):
         override = getattr(self, f"content_safety_threshold_{category}", None)
         return override if override is not None else self.content_safety_severity_threshold
 
-    def summary(self) -> dict[str, bool]:
+    def summary(self) -> dict[str, object]:
         """Toggle snapshot, surfaced in the UI banner so participants can see
         exactly which mitigations are active."""
+        model_label = (
+            f"local/{self.local_model_name}"
+            if self.offline_mode
+            else f"foundry/{self.active_model_deployment}"
+        )
         return {
             "secure_mode": self.secure_mode,
             "offline_mode": self.offline_mode,
             "runtime_toggles_enabled": self.enable_runtime_toggles,
             "model_backend": "foundry-local/openai-compatible" if self.offline_mode else "azure-ai-foundry",
+            "model_label": model_label,
             "allow_stub_model": self.allow_stub_model,
             "vulnerable_app_url": self.vulnerable_app_url,
             "secure_app_url": self.secure_app_url,

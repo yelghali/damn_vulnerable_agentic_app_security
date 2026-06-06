@@ -198,7 +198,7 @@ function renderIdentity(info) {
   }
   if (customerInput) customerInput.disabled = !!secureIdentity;
   if (groupsInput) groupsInput.disabled = !!secureIdentity;
-  const identityPill = document.querySelector(".identity .pill");
+  const identityPill = $("identity-pill");
   if (identityPill) {
     identityPill.textContent = secureIdentity ? "backend-verified" : "client-supplied ⚠";
     identityPill.title = secureIdentity
@@ -207,8 +207,14 @@ function renderIdentity(info) {
   }
   refreshPromptChips();
   const box = $("identity-details");
-  if (!box) return;
+  const identitySummary = $("identity-summary");
   const groups = (info.zava_groups && info.zava_groups.length ? info.zava_groups : info.groups || []).join(", ") || "none";
+  if (identitySummary) {
+    identitySummary.textContent = info.authenticated
+      ? `${info.name || info.user_id || "signed in"} · ${groups}`
+      : "local test identity · editable form values";
+  }
+  if (!box) return;
   box.innerHTML = `
     <div><b>${info.authenticated ? (info.name || "Authenticated user") : "Local / spoofable identity"}</b></div>
     <div>source: ${info.auth_source}</div>
@@ -278,8 +284,7 @@ async function loadPosture() {
       ? `Mode: <span class="secure-badge">GUIDED</span> · ${enabledCount}/${CONTROL_KEYS.length} controls on`
       : 'Mode: <span class="vuln-badge">VULNERABLE baseline</span>' +
         (cfg.offline_mode ? " · offline" : "");
-  sub.innerHTML += ` · model: ${cfg.model_backend || "unknown"}`;
-  if (cfg.allow_stub_model) sub.innerHTML += ' · <span class="vuln-badge">stub allowed</span>';
+  sub.innerHTML += ` · model: ${cfg.model_label || cfg.model_backend || "unknown"}`;
 
   const switchBox = $("mode-switch");
   if (switchBox) {
@@ -408,4 +413,4 @@ renderChips();
 loadPosture();
 loadIdentity();
 $("reveal-token-btn")?.addEventListener("click", () => loadIdentity(true));
-addMsg("Hi! I'm the Zava Wealth Advisor. Ask about your accounts, transactions, or documents — or try one of the exploit buttons on the right to see the current security posture in action.", "bot");
+addMsg("Hi! I'm the Zava Wealth Advisor. Ask about your accounts, transactions, or documents, or use the prompt library to test each security control.", "bot");
