@@ -810,6 +810,29 @@ def test_v10_direct_exposure_when_disabled(monkeypatch):
     assert decision.key_exposed_to_client
 
 
+def test_v10_chat_endpoint_enforces_gateway_budget(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_AI_GATEWAY="true", AI_GATEWAY_TOKEN_LIMIT="100")
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    client = TestClient(app)
+    client.post("/api/gateway/reset")
+    payload = {
+        "message": "What are my account balances?",
+        "customer_id": "CUST-1001",
+        "groups": ["retail-customers"],
+        "lab_estimated_tokens": 60,
+    }
+    first = client.post("/api/chat", json=payload).json()
+    second = client.post("/api/chat", json=payload).json()
+
+    assert first["blocked"] is False
+    assert any("gateway: APIM allowed" in event for event in first["events"])
+    assert second["blocked"] is True
+    assert second["events"] == ["gateway: APIM rejected the request"]
+    assert "token limit exceeded" in second["answer"]
+
+
 # --- V11: agent-to-agent communication poisoning (T12) ---------------------
 _A2A_QUERY = "what is the wire policy and fees?"  # routes to knowledge; retrieves the poisoned doc
 

@@ -27,6 +27,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from src.agents.gateway import GatewayError, reset_gateway_budget, route_call
 from src.agents.model import ModelSafetyBlocked
 from src.agents.orchestrator.orchestrator import handle_turn
 from src.agents.types import AgentContext
@@ -46,6 +47,7 @@ class ChatRequest(BaseModel):
     customer_id: str | None = None
     groups: list[str] = Field(default_factory=lambda: ["retail-customers"])
     approved_action: dict | None = None
+    lab_estimated_tokens: int | None = None
 
 
 class ToggleRequest(BaseModel):
@@ -294,6 +296,7 @@ def update_toggles(req: ToggleRequest, request: Request) -> dict:
         )
     if req.reset:
         get_settings.cache_clear()
+        reset_gateway_budget()
         return _config_summary(request)
     unknown = sorted(set(req.controls) - set(SECURITY_CONTROLS))
     if unknown:
@@ -307,6 +310,14 @@ def update_toggles(req: ToggleRequest, request: Request) -> dict:
     for key, enabled in req.controls.items():
         object.__setattr__(settings, SECURITY_CONTROLS[key], enabled)
     return _config_summary(request)
+
+
+@app.post("/api/gateway/reset")
+def reset_gateway(request: Request) -> dict:
+    if not _runtime_toggles_allowed(request):
+        raise HTTPException(status_code=403, detail="Runtime lab toggles are disabled for this host.")
+    reset_gateway_budget()
+    return {"status": "reset", **_config_summary(request)}
 
 
 @app.get("/api/me", response_model=IdentityInfo)
@@ -458,6 +469,23 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
         groups=groups,
         approved_action=req.approved_action,
     )
+    gateway_events: list[str] = []
+    if settings.enable_ai_gateway:
+        try:
+            estimated_tokens = req.lab_estimated_tokens or max(25, len(req.message) // 4 + 50)
+            decision = route_call(
+                estimated_tokens=estimated_tokens,
+                authenticated=identity.authenticated or not settings.enable_obo,
+            )
+            gateway_events.append(
+                f"gateway: APIM allowed estimated {estimated_tokens} token(s); {decision.tokens_remaining} remaining"
+            )
+        except GatewayError as exc:
+            return ChatResponse(
+                answer=str(exc), agent="orchestrator",
+                events=["gateway: APIM rejected the request"],
+                blocked=True, requires_approval=None, sources=[],
+            )
     try:
         result = handle_turn(req.message, ctx)
     except ModelSafetyBlocked as exc:
@@ -476,7 +504,7 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
     return ChatResponse(
         answer=result.answer,
         agent=result.agent,
-        events=result.events,
+        events=[*gateway_events, *result.events],
         blocked=result.blocked,
         requires_approval=result.requires_approval,
         sources=result.sources,

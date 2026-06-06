@@ -209,6 +209,7 @@ class Settings(BaseSettings):
             "model_backend": "foundry-local/openai-compatible" if self.offline_mode else "azure-ai-foundry",
             "model_label": model_label,
             "data_backend": data_backend,
+            "ai_gateway_token_limit": self.ai_gateway_token_limit,
             "vulnerable_app_url": self.vulnerable_app_url,
             "secure_app_url": self.secure_app_url,
             "local_login": bool(self.azure_tenant_id and self.entra_api_client_id),
