@@ -23,6 +23,7 @@ const TOGGLE_LABELS = {
 };
 
 let currentIdentity = null;
+let currentConfig = null;
 
 // --- One-click exploit + benign prompts -------------------------------------
 const EXPLOITS = [
@@ -150,6 +151,23 @@ async function send(message, approved) {
 // --- Identity ---------------------------------------------------------------
 function renderIdentity(info) {
   currentIdentity = info;
+  const secureIdentity = currentConfig?.secure_mode && info.authenticated;
+  const customerInput = $("customer");
+  const groupsInput = $("groups");
+  if (customerInput && secureIdentity) customerInput.value = info.customer_id || "";
+  if (groupsInput && secureIdentity) {
+    const signedInGroups = info.zava_groups && info.zava_groups.length ? info.zava_groups : info.groups || [];
+    groupsInput.value = signedInGroups.join(", ");
+  }
+  if (customerInput) customerInput.disabled = !!secureIdentity;
+  if (groupsInput) groupsInput.disabled = !!secureIdentity;
+  const identityPill = document.querySelector(".identity .pill");
+  if (identityPill) {
+    identityPill.textContent = secureIdentity ? "backend-verified" : "client-supplied ⚠";
+    identityPill.title = secureIdentity
+      ? "Secure mode ignores spoofed form identity and uses the Entra-authenticated backend session."
+      : "The baseline trusts these client-supplied values — that's vulnerability V5 (IDOR).";
+  }
   const box = $("identity-details");
   if (!box) return;
   const groups = (info.zava_groups && info.zava_groups.length ? info.zava_groups : info.groups || []).join(", ") || "none";
@@ -191,6 +209,8 @@ async function loadPosture() {
     $("toggles").textContent = "backend offline";
     return;
   }
+  currentConfig = cfg;
+  if (currentIdentity) renderIdentity(currentIdentity);
   const secure = cfg.secure_mode;
   const sub = $("mode-sub");
   sub.innerHTML = secure

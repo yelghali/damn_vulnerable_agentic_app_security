@@ -164,6 +164,10 @@ def ensure_app(display_name: str, redirect_uris: list[str]) -> dict[str, Any]:
         sp = service_principals[0]
     else:
         sp = _graph_post("https://graph.microsoft.com/v1.0/servicePrincipals", {"appId": app["appId"]})
+    _graph_patch(
+        f"https://graph.microsoft.com/v1.0/servicePrincipals/{sp['id']}",
+        {"appRoles": _role_payload()},
+    )
     return {"app": app, "servicePrincipal": sp}
 
 

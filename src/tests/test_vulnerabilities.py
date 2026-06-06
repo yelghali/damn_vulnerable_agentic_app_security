@@ -180,7 +180,6 @@ def test_api_me_reads_entra_identity_and_jwt(monkeypatch):
         "userId": "00000000-0000-0000-0000-000000000002",
         "claims": [
             {"typ": "roles", "val": "private-client"},
-            {"typ": "roles", "val": "zava-managers"},
         ],
     }
     token = ".".join([
@@ -203,9 +202,34 @@ def test_api_me_reads_entra_identity_and_jwt(monkeypatch):
     assert body["authenticated"] is True
     assert body["user_id"] == "user_2"
     assert body["customer_id"] == "CUST-1002"
-    assert set(body["zava_groups"]) == {"private-client", "zava-managers"}
+    assert set(body["zava_groups"]) == {"private-client"}
     assert body["token_present"] is True
     assert body["token_payload"]["preferred_username"] == "user_2@example.onmicrosoft.com"
+
+
+def test_api_me_normalizes_legacy_manager_role(monkeypatch):
+    _reload_with(monkeypatch)
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    principal = {
+        "userDetails": "zava_manager@example.onmicrosoft.com",
+        "userId": "00000000-0000-0000-0000-000000000003",
+        "claims": [
+            {"typ": "roles", "val": "retail-customers"},
+            {"typ": "roles", "val": "private-client"},
+            {"typ": "roles", "val": "zava-admins"},
+        ],
+    }
+
+    client = TestClient(app)
+    response = client.get("/api/me", headers={"x-ms-client-principal": _b64_json(principal)})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["user_id"] == "zava_manager"
+    assert body["customer_id"] == "*"
+    assert set(body["zava_groups"]) == {"retail-customers", "private-client", "zava-managers"}
 
 
 def test_tool_agent_answers_are_not_rephrased_by_model(monkeypatch):
