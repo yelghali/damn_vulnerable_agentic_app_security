@@ -25,7 +25,7 @@ from urllib.parse import urlencode
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.agents.orchestrator.orchestrator import handle_turn
 from src.agents.types import AgentContext
@@ -43,7 +43,7 @@ _AUTH_COOKIE_MAX_AGE = 8 * 60 * 60
 class ChatRequest(BaseModel):
     message: str
     customer_id: str | None = None
-    groups: list[str] = ["retail-customers"]
+    groups: list[str] = Field(default_factory=lambda: ["retail-customers"])
     approved_action: dict | None = None
 
 
@@ -61,13 +61,14 @@ class IdentityInfo(BaseModel):
     name: str | None = None
     user_id: str | None = None
     customer_id: str | None = None
-    groups: list[str] = []
-    zava_groups: list[str] = []
+    groups: list[str] = Field(default_factory=list)
+    zava_groups: list[str] = Field(default_factory=list)
     auth_source: str
     token_present: bool = False
     token: str | None = None
     token_header: dict[str, Any] | None = None
     token_payload: dict[str, Any] | None = None
+    access: dict[str, Any] = Field(default_factory=dict)
 
 
 _ZAVA_GROUPS = {"retail-customers", "private-client", "zava-managers"}
@@ -135,6 +136,64 @@ def _customer_from_user_id(user_id: str | None, default_customer_id: str) -> str
     return default_customer_id
 
 
+def _access_summary(authenticated: bool, customer_id: str | None, zava_groups: list[str]) -> dict[str, Any]:
+    groups = set(zava_groups)
+    is_manager = "zava-managers" in groups
+    doc_scopes: list[str] = ["public documents"]
+    if "retail-customers" in groups or is_manager:
+        doc_scopes.append("retail customer documents")
+    if "private-client" in groups or is_manager:
+        doc_scopes.append("private-client documents")
+
+    if not authenticated:
+        return {
+            "mode": "client-supplied baseline",
+            "can": [
+                "Choose any customer_id and group in the form for vulnerable-mode experiments.",
+                "Observe how IDOR and document over-sharing work before Module 5 is fixed.",
+            ],
+            "cannot": [
+                "Prove real Entra authorization or OBO identity until you sign in.",
+                "Use the secure answer key's backend-verified identity context.",
+            ],
+            "documents": doc_scopes,
+        }
+
+    if is_manager:
+        return {
+            "mode": "zava manager",
+            "customer_scope": "All lab customers; name a specific CUST-* in the prompt.",
+            "can": [
+                "Read any lab customer's account data through the secure app.",
+                "Retrieve both retail and private-client Search documents.",
+                "Inspect and adjust Foundry/guardrail setup with scoped lab RBAC.",
+            ],
+            "cannot": [
+                "See resources outside the lab resource group.",
+                "Use PostgreSQL data-plane credentials directly outside the app/tool path.",
+                "Bypass human approval for high-risk transfer actions in secure mode.",
+            ],
+            "documents": doc_scopes,
+        }
+
+    customer_scope = customer_id or "derived customer"
+    return {
+        "mode": "zava learner",
+        "customer_scope": customer_scope,
+        "can": [
+            f"Read account/profile data only for {customer_scope}.",
+            f"Retrieve {', '.join(doc_scopes)} through secure AI Search trimming.",
+            "View lab resources in the Azure Portal with scoped Reader access.",
+        ],
+        "cannot": [
+            "Read another customer's accounts, credit score, transactions, or profile.",
+            "Spoof customer_id or groups in secure mode; the backend ignores form identity.",
+            "Edit Foundry guardrails, Search indexes, PostgreSQL, APIM, or Container Apps.",
+        ],
+        "documents": doc_scopes,
+    }
+
+
 def _identity_from_request(request: Request, req: ChatRequest | None = None, include_token: bool = False) -> IdentityInfo:
     settings = get_settings()
     headers = request.headers
@@ -197,6 +256,7 @@ def _identity_from_request(request: Request, req: ChatRequest | None = None, inc
         token=token if include_token and token else None,
         token_header=token_header if include_token else None,
         token_payload=token_payload if include_token else None,
+        access=_access_summary(bool(principal_name or principal_id or token_payload), customer_id, zava_groups),
     )
 
 

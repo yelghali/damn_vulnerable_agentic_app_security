@@ -75,6 +75,12 @@
     .hint { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
     .mini { font-size: 11px; color: var(--muted); line-height: 1.45; }
     .mini b { color: var(--text); }
+    .access-grid { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 8px; }
+    .access-grid ul { margin: 4px 0 0; padding-left: 16px; }
+    .access-grid li { margin: 0 0 4px; }
+    .access-title { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+    .access-title.can { color: var(--on); }
+    .access-title.cannot { color: var(--off); }
     .tokenbox { display: none; margin-top: 8px; max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-all; background: #101318; border: 1px solid var(--border); border-radius: 8px; padding: 8px; font-size: 10px; color: #cbd5e1; }
     .side a { color: #93c5fd; }
   </style>
@@ -130,6 +136,11 @@
         <div class="hint">In secure local mode, sign in with a real Entra test user. The vulnerable baseline still accepts client-supplied identity so V5 is visible.</div>
       </section>
       <section>
+        <h3>Access from groups</h3>
+        <div class="mini" id="access-details">loading&hellip;</div>
+        <div class="hint">Derived by the backend from the same customer and Zava groups used by the secure PostgreSQL tools and AI Search filters.</div>
+      </section>
+      <section>
         <h3>Mode switch</h3>
         <div class="mini" id="mode-switch">loading&hellip;</div>
         <div class="hint">For browser-only labs, deploy paired vulnerable and secure apps or revisions, then link them here.</div>
@@ -146,6 +157,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=2026-06-auth-identity-sync"></script>
+  <script src="/static/app.js?v=2026-06-access-summary-prompts"></script>
 </body>
 </html>
