@@ -118,11 +118,11 @@
 
   <div class="session-panel">
     <div class="session-bar">
-      <span>Acting as</span>
-      <input id="customer" type="text" value="CUST-1001" title="customer_id sent to the API (no token validation in the baseline — V5)" />
-      <span>groups</span>
+      <span>Customer</span>
+      <input id="customer" type="text" value="CUST-1001" title="Customer used for lab requests. In secure mode this comes from the signed-in Zava customer." />
+      <span>Access groups</span>
       <input id="groups" type="text" value="retail-customers" />
-      <span class="pill" id="identity-pill" title="The baseline trusts these client-supplied values — that's vulnerability V5 (IDOR).">client-supplied &#9888;</span>
+      <span class="pill" id="identity-pill" title="The baseline trusts editable customer values — that's vulnerability V5 (IDOR).">editable &#9888;</span>
       <span class="identity-summary" id="identity-summary">checking identity...</span>
       <span id="identity-actions">loading...</span>
       <button class="ghost" id="reveal-token-btn" type="button">Show backend JWT</button>
@@ -180,6 +180,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=2026-06-three-panel-2"></script>
+  <script src="/static/app.js?v=2026-06-customer-context-2"></script>
 </body>
 </html>

@@ -153,14 +153,14 @@ def _access_summary(authenticated: bool, customer_id: str | None, zava_groups: l
 
     if not authenticated:
         return {
-            "mode": "client-supplied baseline",
+            "mode": "editable baseline",
             "can": [
-                "Choose any customer_id and group in the form for vulnerable-mode experiments.",
+                "Choose any customer and group in the form for vulnerable-mode experiments.",
                 "Observe how IDOR and document over-sharing work before Module 5 is fixed.",
             ],
             "cannot": [
-                "Prove real Entra authorization or OBO identity until you sign in.",
-                "Use the secure answer key's backend-verified identity context.",
+                "Prove secure customer authorization until you sign in.",
+                "Use the secure answer key's backend-verified customer context.",
             ],
             "documents": doc_scopes,
         }
@@ -193,7 +193,7 @@ def _access_summary(authenticated: bool, customer_id: str | None, zava_groups: l
         ],
         "cannot": [
             "Read another customer's accounts, credit score, transactions, or profile.",
-            "Spoof customer_id or groups in secure mode; the backend ignores form identity.",
+            "Spoof customer or groups in secure mode; the backend uses the signed-in customer.",
             "Edit Foundry guardrails, Search indexes, PostgreSQL, APIM, or Container Apps.",
         ],
         "documents": doc_scopes,

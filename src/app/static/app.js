@@ -13,7 +13,7 @@ const TOGGLE_LABELS = {
   tool_least_priv: "Tool least-privilege (V4)",
   hitl: "Human-in-the-loop (V4)",
   code_sandbox: "Code sandbox (V8)",
-  obo: "Entra OBO / identity (V5)",
+  obo: "Entra customer auth (V5)",
   doc_security: "Doc-level security (V5)",
   groundedness: "Groundedness (V6)",
   secure_runtime: "Secure infrastructure (V7)",
@@ -200,23 +200,24 @@ function renderIdentity(info) {
   if (groupsInput) groupsInput.disabled = !!secureIdentity;
   const identityPill = $("identity-pill");
   if (identityPill) {
-    identityPill.textContent = secureIdentity ? "backend-verified" : "client-supplied ⚠";
+    identityPill.textContent = secureIdentity ? "verified customer" : "editable ⚠";
     identityPill.title = secureIdentity
-      ? "Secure mode ignores spoofed form identity and uses the Entra-authenticated backend session."
-      : "The baseline trusts these client-supplied values — that's vulnerability V5 (IDOR).";
+      ? "Secure mode uses the signed-in Zava customer from the backend session."
+      : "The baseline trusts editable customer values — that's vulnerability V5 (IDOR).";
   }
   refreshPromptChips();
   const box = $("identity-details");
   const identitySummary = $("identity-summary");
   const groups = (info.zava_groups && info.zava_groups.length ? info.zava_groups : info.groups || []).join(", ") || "none";
   if (identitySummary) {
+    const customerLabel = info.customer_id === "*" ? "manager · all customers" : (info.customer_id || "customer context");
     identitySummary.textContent = info.authenticated
-      ? `${info.name || info.user_id || "signed in"} · ${groups}`
-      : "local test identity · editable form values";
+      ? `${customerLabel} · ${groups}`
+      : "editable customer context";
   }
   if (box) {
     box.innerHTML = `
-      <div><b>${info.authenticated ? (info.name || "Authenticated user") : "Local / spoofable identity"}</b></div>
+      <div><b>${info.authenticated ? (info.customer_id || "Verified customer") : "Editable customer context"}</b></div>
       <div>source: ${info.auth_source}</div>
       <div>customer: ${info.customer_id || "n/a"}</div>
       <div>Zava groups: ${groups}</div>
@@ -414,4 +415,4 @@ renderChips();
 loadPosture();
 loadIdentity();
 $("reveal-token-btn")?.addEventListener("click", () => loadIdentity(true));
-addMsg("Hi! I'm the Zava Wealth Advisor. Ask about your accounts, transactions, or documents, or use the prompt library to test each security control.", "bot");
+addMsg("Hi! I'm the Zava Wealth Advisor. Choose a customer context, ask about accounts or documents, or use the prompt library to test each security control.", "bot");
