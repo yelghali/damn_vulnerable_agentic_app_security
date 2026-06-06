@@ -23,6 +23,8 @@ fallback in the app path.
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from functools import lru_cache
 
@@ -32,6 +34,16 @@ logger = logging.getLogger("zava.model")
 
 # API version used when routing through the APIM AI gateway (AzureOpenAI client).
 _AOAI_API_VERSION = "2024-10-21"
+
+
+def _ensure_azure_cli_on_path() -> None:
+    """Help DefaultAzureCredential find Azure CLI in local Windows labs."""
+    az_dir = Path(r"C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin")
+    if os.name != "nt" or not (az_dir / "az.cmd").exists():
+        return
+    path_parts = os.environ.get("PATH", "").split(os.pathsep)
+    if str(az_dir) not in path_parts:
+        os.environ["PATH"] = os.pathsep.join([str(az_dir), *path_parts])
 
 
 @lru_cache
@@ -132,6 +144,7 @@ def compose_answer(system_prompt: str, user_message: str, context: str = "") -> 
 
     # --- Azure AI Foundry + Microsoft Agent Framework path -----------------
     # Lazy imports so offline mode needs no Azure SDKs.
+    _ensure_azure_cli_on_path()
     from azure.ai.projects import AIProjectClient  # noqa: PLC0415
     from azure.identity import DefaultAzureCredential  # noqa: PLC0415
 
@@ -157,6 +170,11 @@ def compose_answer(system_prompt: str, user_message: str, context: str = "") -> 
         )
     else:
         # LAB-VULN(V10): app talks to the deployment directly (static key path).
+        if not settings.foundry_project_endpoint:
+            raise RuntimeError(
+                "FOUNDRY_PROJECT_ENDPOINT is required when OFFLINE_MODE=false. "
+                "Set it to the Azure AI Foundry project endpoint."
+            )
         project = AIProjectClient(
             endpoint=settings.foundry_project_endpoint,
             credential=credential,

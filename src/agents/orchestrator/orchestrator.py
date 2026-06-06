@@ -62,7 +62,7 @@ def _route(message: str) -> str:
         return "knowledge"
     if any(k in low for k in ("account", "balance", "transaction", "credit", "score")):
         return "accounts"
-    return "knowledge"
+    return "orchestrator"
 
 
 def _deliver_handoff(result: TurnResult, ctx: AgentContext) -> TurnResult:

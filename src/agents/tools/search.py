@@ -104,7 +104,7 @@ def search_documents(
         if score:
             scored.append((score, d))
     scored.sort(key=lambda x: x[0], reverse=True)
-    results = [d for _, d in scored[:top]] or docs[:top]
+    results = [d for _, d in scored[:top]]
 
     if settings.enable_doc_security and not _is_admin(caller_groups):
         # SECURE: document-level security trimming.

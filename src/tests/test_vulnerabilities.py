@@ -146,7 +146,7 @@ def _install_fake_azure_services(monkeypatch: pytest.MonkeyPatch, guard, search)
             if score:
                 scored.append((score, doc))
         scored.sort(key=lambda item: item[0], reverse=True)
-        results = [doc for _, doc in scored[:top]] or docs[:top]
+        results = [doc for _, doc in scored[:top]]
         if settings.enable_doc_security:
             groups = set(caller_groups or [])
             admin_groups = {g.strip() for g in settings.admin_groups.split(",") if g.strip()}
