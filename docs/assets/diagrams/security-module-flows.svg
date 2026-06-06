@@ -26,7 +26,7 @@
   </g>
   <g transform="translate(28 306)">
     <rect class="panel" width="548" height="94"/>
-    <text class="h" x="18" y="28">5. Entra + Search Security</text><text class="s" x="18" y="50">Signed user</text><path class="arrow" d="M94 47h42"/><rect class="box4" x="142" y="31" width="108" height="32"/><text class="s" x="158" y="52">Entra OBO</text><path class="arrow" d="M254 47h42"/><rect class="box3" x="302" y="31" width="200" height="32"/><text class="s" x="316" y="52">Search group_ids ACL</text>
+    <text class="h" x="18" y="28">5. Entra + Search Security</text><text class="s" x="18" y="50">Customer</text><path class="arrow" d="M94 47h42"/><rect class="box4" x="142" y="31" width="108" height="32"/><text class="s" x="158" y="52">Entra OBO</text><path class="arrow" d="M254 47h42"/><rect class="box3" x="302" y="31" width="200" height="32"/><text class="s" x="316" y="52">Search group_ids ACL</text>
   </g>
   <g transform="translate(624 306)">
     <rect class="panel" width="548" height="94"/>
