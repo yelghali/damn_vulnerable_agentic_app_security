@@ -134,6 +134,7 @@ class Settings(BaseSettings):
     entra_api_client_id: str = Field(default="", alias="ENTRA_API_CLIENT_ID")
     entra_api_client_secret: str = Field(default="", alias="ENTRA_API_CLIENT_SECRET")
     entra_api_scope: str = Field(default="", alias="ENTRA_API_SCOPE")
+    entra_redirect_uri: str = Field(default="", alias="ENTRA_REDIRECT_URI")
     key_vault_uri: str = Field(default="", alias="KEY_VAULT_URI")
     appinsights_connection_string: str = Field(
         default="", alias="APPLICATIONINSIGHTS_CONNECTION_STRING"
@@ -191,6 +192,7 @@ class Settings(BaseSettings):
             "allow_stub_model": self.allow_stub_model,
             "vulnerable_app_url": self.vulnerable_app_url,
             "secure_app_url": self.secure_app_url,
+            "local_login": bool(self.azure_tenant_id and self.entra_api_client_id),
             "content_safety": bool(self.enable_content_safety),
             "prompt_shields": bool(self.enable_prompt_shields),
             "pii_redaction": bool(self.enable_pii_redaction),

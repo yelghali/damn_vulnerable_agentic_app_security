@@ -160,6 +160,12 @@ function renderIdentity(info) {
     <div>Zava groups: ${groups}</div>
     <div>JWT/API token: ${info.token_present ? "available" : "not available"}</div>
   `;
+  const actions = $("identity-actions");
+  if (actions) {
+    actions.innerHTML = info.authenticated
+      ? '<a href="/logout">Sign out</a>'
+      : '<a href="/login">Sign in with Entra</a>';
+  }
 }
 
 async function loadIdentity(includeToken = false) {
@@ -201,6 +207,9 @@ async function loadPosture() {
     if (cfg.secure_app_url) links.push(`<a href="${cfg.secure_app_url}">Open secure app</a>`);
     switchBox.innerHTML = links.length ? links.join(" · ") : "No paired app URLs configured.";
   }
+
+  const actions = $("identity-actions");
+  if (actions && !cfg.local_login) actions.innerHTML = "Entra local login is not configured.";
 
   const box = $("toggles");
   box.innerHTML = "";

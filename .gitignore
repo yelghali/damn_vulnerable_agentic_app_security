@@ -15,6 +15,7 @@ env/
 .env
 .env.*
 !.env.example
+.zava-*.json
 
 # --- Local data artifacts ---
 src/data/*.sqlite

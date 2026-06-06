@@ -124,9 +124,10 @@
       <section>
         <h3>Signed-in identity</h3>
         <div class="mini" id="identity-details">loading&hellip;</div>
+        <div class="mini" id="identity-actions">loading&hellip;</div>
         <button class="ghost" id="reveal-token-btn" type="button">Show backend JWT</button>
         <div class="tokenbox" id="token-box"></div>
-        <div class="hint">In Azure, this comes from Entra / EasyAuth headers. Locally, the baseline remains client-supplied so V5 is visible.</div>
+        <div class="hint">In secure local mode, sign in with a real Entra test user. The vulnerable baseline still accepts client-supplied identity so V5 is visible.</div>
       </section>
       <section>
         <h3>Mode switch</h3>

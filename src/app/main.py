@@ -13,13 +13,17 @@ On-Behalf-Of flow so identity comes from a validated token, not the request body
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
+import secrets
+import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -31,6 +35,9 @@ logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="Zava Wealth Advisor (Damn Vulnerable Agentic App)")
 _STATIC = Path(__file__).resolve().parent / "static"
+_AUTH_COOKIE = "zava_local_auth"
+_AUTH_FLOW_COOKIE = "zava_local_auth_flow"
+_AUTH_COOKIE_MAX_AGE = 8 * 60 * 60
 
 
 class ChatRequest(BaseModel):
@@ -72,6 +79,35 @@ def _decode_base64_json(value: str) -> dict[str, Any] | None:
         return json.loads(base64.b64decode(padded).decode("utf-8"))
     except Exception:  # noqa: BLE001 - identity headers are optional lab inputs
         return None
+
+
+def _encode_cookie_json(value: dict[str, Any]) -> str:
+    raw = json.dumps(value, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _decode_cookie_json(value: str | None) -> dict[str, Any] | None:
+    if not value:
+        return None
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        return json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+    except Exception:  # noqa: BLE001 - local login cookie is optional lab state
+        return None
+
+
+def _redirect_uri(request: Request) -> str:
+    settings = get_settings()
+    return settings.entra_redirect_uri or str(request.url_for("auth_callback"))
+
+
+def _auth_authority() -> str:
+    return f"https://login.microsoftonline.com/{get_settings().azure_tenant_id}/oauth2/v2.0"
+
+
+def _pkce_challenge(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
 def _decode_jwt_part(part: str) -> dict[str, Any] | None:
@@ -118,12 +154,17 @@ def _identity_from_request(request: Request, req: ChatRequest | None = None, inc
             if claim_type.endswith("/groups") or claim_type in {"groups", "roles", "role"}:
                 groups.append(value)
 
-    token = headers.get("x-ms-token-aad-access-token") or headers.get("authorization", "").removeprefix("Bearer ")
+    local_auth = _decode_cookie_json(request.cookies.get(_AUTH_COOKIE)) or {}
+    token = (
+        headers.get("x-ms-token-aad-access-token")
+        or headers.get("authorization", "").removeprefix("Bearer ")
+        or local_auth.get("id_token")
+    )
     token_header, token_payload = _jwt_details(token)
     if token_payload:
         principal_name = principal_name or token_payload.get("preferred_username") or token_payload.get("upn") or token_payload.get("email")
         principal_id = principal_id or token_payload.get("oid") or token_payload.get("sub")
-        source = "jwt" if source == "client-supplied" else source
+        source = "entra-local-login" if local_auth else ("jwt" if source == "client-supplied" else source)
         token_groups = token_payload.get("groups") or token_payload.get("roles") or []
         if isinstance(token_groups, str):
             groups.append(token_groups)
@@ -163,6 +204,95 @@ def config() -> dict:
 @app.get("/api/me", response_model=IdentityInfo)
 def me(request: Request, include_token: bool = False) -> IdentityInfo:
     return _identity_from_request(request, include_token=include_token)
+
+
+@app.get("/login")
+def login(request: Request):
+    settings = get_settings()
+    if not settings.azure_tenant_id or not settings.entra_api_client_id:
+        return HTMLResponse(
+            "Entra login is not configured. Set AZURE_TENANT_ID, "
+            "ENTRA_API_CLIENT_ID, and ENTRA_REDIRECT_URI."
+        )
+    state = secrets.token_urlsafe(24)
+    verifier = secrets.token_urlsafe(64)
+    redirect_uri = _redirect_uri(request)
+    scopes = ["openid", "profile", "email"]
+    if settings.entra_api_scope:
+        scopes.append(settings.entra_api_scope)
+    params = {
+        "client_id": settings.entra_api_client_id,
+        "response_type": "code",
+        "redirect_uri": redirect_uri,
+        "response_mode": "query",
+        "scope": " ".join(scopes),
+        "state": state,
+        "code_challenge": _pkce_challenge(verifier),
+        "code_challenge_method": "S256",
+        "prompt": "select_account",
+    }
+    response = RedirectResponse(f"{_auth_authority()}/authorize?{urlencode(params)}")
+    response.set_cookie(
+        _AUTH_FLOW_COOKIE,
+        _encode_cookie_json({"state": state, "verifier": verifier, "redirect_uri": redirect_uri}),
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=600,
+    )
+    return response
+
+
+@app.get("/auth/callback", name="auth_callback")
+def auth_callback(request: Request):
+    settings = get_settings()
+    error = request.query_params.get("error")
+    if error:
+        return HTMLResponse(f"Entra login failed: {error}", status_code=400)
+    flow = _decode_cookie_json(request.cookies.get(_AUTH_FLOW_COOKIE)) or {}
+    if not flow or flow.get("state") != request.query_params.get("state"):
+        return HTMLResponse("Entra login failed: invalid state.", status_code=400)
+
+    import httpx  # noqa: PLC0415
+
+    token_response = httpx.post(
+        f"{_auth_authority()}/token",
+        data={
+            "client_id": settings.entra_api_client_id,
+            "grant_type": "authorization_code",
+            "code": request.query_params.get("code", ""),
+            "redirect_uri": flow["redirect_uri"],
+            "code_verifier": flow["verifier"],
+        },
+        timeout=20.0,
+    )
+    if token_response.status_code >= 400:
+        return HTMLResponse(f"Entra token exchange failed: {token_response.text}", status_code=400)
+    token_body = token_response.json()
+    response = RedirectResponse("/")
+    response.delete_cookie(_AUTH_FLOW_COOKIE)
+    response.set_cookie(
+        _AUTH_COOKIE,
+        _encode_cookie_json(
+            {
+                "id_token": token_body.get("id_token"),
+                "expires_at": int(time.time()) + int(token_body.get("expires_in", _AUTH_COOKIE_MAX_AGE)),
+            }
+        ),
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=_AUTH_COOKIE_MAX_AGE,
+    )
+    return response
+
+
+@app.get("/logout")
+def logout() -> RedirectResponse:
+    response = RedirectResponse("/")
+    response.delete_cookie(_AUTH_COOKIE)
+    response.delete_cookie(_AUTH_FLOW_COOKIE)
+    return response
 
 
 def format_error(exc: Exception) -> str:
