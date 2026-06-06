@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     local_model_name: str = Field(default="phi-3.5-mini", alias="LOCAL_MODEL_NAME")
     local_model_endpoint: str = Field(default="", alias="LOCAL_MODEL_ENDPOINT")
     local_model_key: str = Field(default="", alias="LOCAL_MODEL_KEY")
+    local_model_timeout_seconds: float = Field(default=45.0, alias="LOCAL_MODEL_TIMEOUT_SECONDS")
 
     # --- Per-vulnerability toggles (None => inherit from secure_mode) -------
     enable_content_safety: bool | None = Field(default=None, alias="ENABLE_CONTENT_SAFETY")  # V1/V2

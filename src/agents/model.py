@@ -23,6 +23,7 @@ fallback in the app path.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from functools import lru_cache
 
 from src.config import get_settings
@@ -52,7 +53,11 @@ def _local_client() -> tuple[object, str] | None:
 
             manager = FoundryLocalManager(settings.local_model_name)
             model_info = manager.get_model_info(settings.local_model_name)
-            client = OpenAI(base_url=manager.endpoint, api_key=manager.api_key or "not-needed")
+            client = OpenAI(
+                base_url=manager.endpoint,
+                api_key=manager.api_key or "not-needed",
+                timeout=settings.local_model_timeout_seconds,
+            )
             logger.info("model: using Foundry Local (%s)", model_info.id)
             return client, model_info.id
         except Exception:  # SDK missing / service unavailable -> try endpoint.
@@ -66,6 +71,7 @@ def _local_client() -> tuple[object, str] | None:
             client = OpenAI(
                 base_url=settings.local_model_endpoint,
                 api_key=settings.local_model_key or "not-needed",
+                timeout=settings.local_model_timeout_seconds,
             )
             logger.info(
                 "model: using local SLM endpoint %s (%s)",
@@ -85,6 +91,7 @@ def _call_local_slm(system_prompt: str, user_message: str, context: str) -> str 
     if built is None:
         return None
     client, model_name = built
+
     try:
         completion = client.chat.completions.create(  # type: ignore[attr-defined]
             model=model_name,
@@ -105,7 +112,16 @@ def compose_answer(system_prompt: str, user_message: str, context: str = "") -> 
     settings = get_settings()
 
     if settings.offline_mode:
-        answer = _call_local_slm(system_prompt, user_message, context)
+        executor = ThreadPoolExecutor(max_workers=1)
+        try:
+            answer = executor.submit(_call_local_slm, system_prompt, user_message, context).result(
+                timeout=settings.local_model_timeout_seconds
+            )
+        except FutureTimeoutError:
+            logger.warning("model: local model path timed out after %.1fs", settings.local_model_timeout_seconds)
+            answer = None
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
         if answer is not None:
             return answer
         raise RuntimeError(
