@@ -74,6 +74,11 @@ output "app_url" {
   value       = var.deploy_app ? "https://${azurerm_container_app.zava_app[0].ingress[0].fqdn}" : ""
 }
 
+output "local_model_endpoint" {
+  description = "Internal OpenAI-compatible endpoint used by the hosted vulnerable app when app_offline_mode=true. Empty when not deployed or when a custom local_model_endpoint is supplied."
+  value       = local.deploy_hosted_local_model ? "https://${azurerm_container_app.local_model[0].ingress[0].fqdn}/v1" : var.local_model_endpoint
+}
+
 output "cohort_users" {
   description = "Generated lab users and their per-user Foundry project/APIM/app coordinates when enable_cohort_mode=true."
   value = {

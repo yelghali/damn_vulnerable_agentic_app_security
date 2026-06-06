@@ -196,7 +196,43 @@ variable "app_container_image" {
 variable "app_offline_mode" {
   type        = bool
   default     = true
-  description = "true = browser-accessible vulnerable baseline with container-local SQLite/stub fallback. false = app calls Azure Foundry/PostgreSQL/MCP/APIM using the env below."
+  description = "true = browser-accessible vulnerable baseline with container-local SQLite and the hosted local model endpoint. false = app calls Azure Foundry/PostgreSQL/MCP/APIM using the env below."
+}
+
+variable "deploy_vulnerable_local_model" {
+  type        = bool
+  default     = true
+  description = "Deploy an internal OpenAI-compatible local model service on Azure Container Apps for the hosted vulnerable app when app_offline_mode=true. This avoids Azure Foundry guardrails for the Part 1/V1 vulnerable model demo."
+}
+
+variable "local_model_image" {
+  type        = string
+  default     = "ollama/ollama:latest"
+  description = "Container image for the hosted local model service. Defaults to Ollama, which exposes an OpenAI-compatible /v1 API."
+}
+
+variable "local_model_name" {
+  type        = string
+  default     = "phi3:mini"
+  description = "Model name used by the hosted local model service and passed to the app as LOCAL_MODEL_NAME."
+}
+
+variable "local_model_endpoint" {
+  type        = string
+  default     = ""
+  description = "Optional OpenAI-compatible model endpoint for the hosted vulnerable app. When empty and deploy_vulnerable_local_model=true, Terraform wires the internal ACA local model endpoint."
+}
+
+variable "local_model_cpu" {
+  type        = number
+  default     = 2
+  description = "CPU allocated to the hosted local model Container App. Phi-class CPU inference is slower than Foundry but good enough for a vulnerable demo."
+}
+
+variable "local_model_memory" {
+  type        = string
+  default     = "4Gi"
+  description = "Memory allocated to the hosted local model Container App. Increase for larger local models."
 }
 
 variable "vulnerable_app_url" {

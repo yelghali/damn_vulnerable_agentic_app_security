@@ -107,6 +107,56 @@ resource "azurerm_container_app" "mcp_toolbox" {
   ]
 }
 
+# Internal OpenAI-compatible local model for the hosted vulnerable app.
+# This is intentionally outside Azure AI Foundry, so the V1/V2 baseline can
+# demonstrate an ungoverned model even when the subscription cannot create a
+# filters-off Foundry deployment. Default image is Ollama serving phi3:mini.
+resource "azurerm_container_app" "local_model" {
+  count                        = local.deploy_hosted_local_model ? 1 : 0
+  name                         = "ca-model-${local.base}"
+  container_app_environment_id = azurerm_container_app_environment.mcp[0].id
+  resource_group_name          = azurerm_resource_group.rg.name
+  revision_mode                = "Single"
+  tags                         = merge(local.tags, { purpose = "vulnerable-local-model" })
+
+  template {
+    min_replicas = 1
+    max_replicas = 1
+
+    container {
+      name   = "local-model"
+      image  = var.local_model_image
+      cpu    = var.local_model_cpu
+      memory = var.local_model_memory
+
+      command = ["/bin/sh", "-c"]
+      args = [
+        "ollama serve & pid=$!; sleep 5; ollama pull ${var.local_model_name}; wait $pid"
+      ]
+
+      env {
+        name  = "OLLAMA_HOST"
+        value = "0.0.0.0:11434"
+      }
+      env {
+        name  = "OLLAMA_MODELS"
+        value = "/tmp/ollama-models"
+      }
+    }
+  }
+
+  ingress {
+    external_enabled = false
+    target_port      = 11434
+    transport        = "http"
+
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+}
+
 # Browser-accessible Zava app. This is intentionally deployable in vulnerable
 # mode so participants who cannot run Python locally can still do Part 1 in a
 # web browser. Set app_offline_mode=false to connect the same hosted app to
@@ -164,6 +214,14 @@ resource "azurerm_container_app" "zava_app" {
       env {
         name  = "SECURE_MODE"
         value = tostring(var.secure_mode)
+      }
+      env {
+        name  = "LOCAL_MODEL_ENDPOINT"
+        value = local.deploy_hosted_local_model ? "https://${azurerm_container_app.local_model[0].ingress[0].fqdn}/v1" : var.local_model_endpoint
+      }
+      env {
+        name  = "LOCAL_MODEL_NAME"
+        value = var.local_model_name
       }
       env {
         name  = "FOUNDRY_PROJECT_ENDPOINT"
@@ -317,6 +375,14 @@ resource "azurerm_container_app" "zava_user_app" {
       env {
         name  = "SECURE_MODE"
         value = tostring(var.secure_mode)
+      }
+      env {
+        name  = "LOCAL_MODEL_ENDPOINT"
+        value = local.deploy_hosted_local_model ? "https://${azurerm_container_app.local_model[0].ingress[0].fqdn}/v1" : var.local_model_endpoint
+      }
+      env {
+        name  = "LOCAL_MODEL_NAME"
+        value = var.local_model_name
       }
       env {
         name  = "FOUNDRY_PROJECT_ENDPOINT"

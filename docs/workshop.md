@@ -448,6 +448,8 @@ python -m src.scripts.seed   # seed Postgres + upload sample docs (incl. one poi
 
 Terraform emits `app_url` when `deploy_app=true`; share that URL with browser-only participants for Part 1. By default the hosted app uses `app_offline_mode=true`, so the vulnerable baseline works immediately with container-local sample data and a real local/cloud model endpoint. For Part 2, set `app_offline_mode=false` and provide the PostgreSQL app-role password so the same hosted app uses the Foundry project SDK for model calls, PostgreSQL Flexible Server for data tools, the Microsoft Azure MCP Server when `USE_MCP_TOOLS=true`, and APIM when `ENABLE_AI_GATEWAY=true` plus `AI_GATEWAY_URL` are set.
 
+For the cloud-hosted vulnerable app, `app_offline_mode=true` now deploys an internal Azure Container Apps local model service by default (`deploy_vulnerable_local_model=true`). The default image is Ollama serving `phi3:mini`, exposed only inside the Container Apps environment at an OpenAI-compatible `/v1` endpoint and passed to the app as `LOCAL_MODEL_ENDPOINT`. This gives you the same teaching point as Foundry Local on a laptop: the vulnerable app uses a real non-Azure-guardrailed model. To run the vulnerable app against Azure Foundry instead, set `app_offline_mode=false`; if you also need a pure Azure vulnerable model demo, use `enable_ungoverned_model=true` only in subscriptions with an approved modified-content-filter exception.
+
 For browser-only learners, do **not** let every student mutate live security controls from the public UI. Deploy paired app variants instead:
 
 - **Vulnerable app URL** — `SECURE_MODE=false`, useful for Part 1 exploits.

@@ -141,10 +141,13 @@ MCP Server** on Azure Container Apps (the agents' PostgreSQL tool), and monitori
 Copy the emitted outputs into `.env` (including `pg_mcp_server_url` ->
 `PG_MCP_SERVER_URL`, `ai_gateway_url` -> `AI_GATEWAY_URL`, and the PostgreSQL
 connection strings), set `OFFLINE_MODE=false`, then run `python -m src.scripts.seed`
-to seed PostgreSQL and AI Search. The hosted app defaults to `app_offline_mode=true`,
-which gives a browser-accessible vulnerable baseline using container-local sample
-data. Set `-var app_offline_mode=false` when you want that hosted app to call
-Foundry models, Azure Database for PostgreSQL, the Microsoft Azure MCP Server
+to seed PostgreSQL and AI Search. The hosted vulnerable app defaults to
+`app_offline_mode=true`, which deploys an internal ACA-hosted Ollama/Phi model
+(`phi3:mini`) and points the app at its OpenAI-compatible `/v1` endpoint. That
+keeps the Part 1 model demo outside Azure Foundry guardrails, like Foundry Local
+on a laptop, while still using container-local sample data. Set
+`-var app_offline_mode=false` when you want that hosted vulnerable app to call
+Azure Foundry models, Azure Database for PostgreSQL, the Microsoft Azure MCP Server
 when `USE_MCP_TOOLS=true`, and APIM when `ENABLE_AI_GATEWAY=true`. See
 [docs/workshop.md](docs/workshop.md) for region/quota prerequisites and the
 tenant-admin prep steps (Entra app registration, Purview) with fallbacks.
