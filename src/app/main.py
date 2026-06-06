@@ -27,6 +27,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from src.agents.model import ModelSafetyBlocked
 from src.agents.orchestrator.orchestrator import handle_turn
 from src.agents.types import AgentContext
 from src.config import SECURITY_CONTROLS, get_settings
@@ -459,6 +460,13 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
     )
     try:
         result = handle_turn(req.message, ctx)
+    except ModelSafetyBlocked as exc:
+        logging.info("chat turn blocked by model safety policy: %s", exc)
+        return ChatResponse(
+            answer=str(exc), agent="orchestrator",
+            events=["model: Azure Foundry content filter blocked the request"],
+            blocked=True, requires_approval=None, sources=[],
+        )
     except Exception as exc:  # noqa: BLE001 - surface a safe/unsafe error per V7
         logging.exception("chat turn failed")
         return ChatResponse(

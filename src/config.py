@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     # --- Lab mode ----------------------------------------------------------
     offline_mode: bool = Field(default=True, alias="OFFLINE_MODE")
+    local_data_mode: bool = Field(default=False, alias="LOCAL_DATA_MODE")
     secure_mode: bool = Field(default=False, alias="SECURE_MODE")
     enable_runtime_toggles: bool = Field(default=False, alias="ENABLE_RUNTIME_TOGGLES")
 
@@ -92,6 +93,7 @@ class Settings(BaseSettings):
 
     # --- Azure AI Foundry --------------------------------------------------
     foundry_project_endpoint: str = Field(default="", alias="FOUNDRY_PROJECT_ENDPOINT")
+    foundry_model_name: str = Field(default="", alias="FOUNDRY_MODEL_NAME")
     foundry_model_deployment: str = Field(default="gpt-4.1-mini", alias="FOUNDRY_MODEL_DEPLOYMENT")
     foundry_ungoverned_deployment: str = Field(
         default="gpt-4.1-mini-nofilter", alias="FOUNDRY_UNGOVERNED_DEPLOYMENT"
@@ -192,14 +194,21 @@ class Settings(BaseSettings):
         model_label = (
             f"local/{self.local_model_name}"
             if self.offline_mode
-            else f"foundry/{self.active_model_deployment}"
+            else (
+                f"foundry/{self.active_model_deployment} ({self.foundry_model_name})"
+                if self.foundry_model_name
+                else f"foundry/{self.active_model_deployment}"
+            )
         )
+        data_backend = "local-sqlite" if self.offline_mode or self.local_data_mode else "postgresql"
         return {
             "secure_mode": self.secure_mode,
             "offline_mode": self.offline_mode,
+            "local_data_mode": self.local_data_mode,
             "runtime_toggles_enabled": self.enable_runtime_toggles,
             "model_backend": "foundry-local/openai-compatible" if self.offline_mode else "azure-ai-foundry",
             "model_label": model_label,
+            "data_backend": data_backend,
             "vulnerable_app_url": self.vulnerable_app_url,
             "secure_app_url": self.secure_app_url,
             "local_login": bool(self.azure_tenant_id and self.entra_api_client_id),

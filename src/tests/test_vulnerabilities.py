@@ -30,6 +30,7 @@ def _reload_with(monkeypatch: pytest.MonkeyPatch, **env: str):
         "ENABLE_GROUNDEDNESS", "ENABLE_SECURE_RUNTIME",
         "ENABLE_MCP_TOOL_SECURITY", "ENABLE_AI_GATEWAY", "ENABLE_A2A_GUARD",
         "ENABLE_RUNTIME_TOGGLES",
+        "LOCAL_DATA_MODE",
         "USE_MCP_TOOLS", "PG_MCP_SERVER_URL", "MCP_TOOL_ALLOWLIST",
         "AI_GATEWAY_TOKEN_LIMIT",
         "CONTENT_SAFETY_ENDPOINT", "CONTENT_SAFETY_KEY", "LANGUAGE_ENDPOINT",
@@ -508,6 +509,19 @@ def test_v4_idor_allowed_when_disabled(monkeypatch):
     _, db, _ = _reload_with(monkeypatch, ENABLE_TOOL_LEAST_PRIV="false")
     rows = db.get_accounts("CUST-1002", caller_id="CUST-1001")
     assert rows  # vulnerable baseline leaks another customer's data
+
+
+def test_local_data_mode_uses_sqlite_when_model_is_remote(monkeypatch):
+    _, db, _ = _reload_with(
+        monkeypatch,
+        OFFLINE_MODE="false",
+        LOCAL_DATA_MODE="true",
+        FOUNDRY_PROJECT_ENDPOINT="https://foundry.test/api/projects/project",
+        FOUNDRY_MODEL_DEPLOYMENT="gpt-governed",
+    )
+    score = db.get_credit_score("CUST-1001", caller_id="CUST-1001")
+    assert score["score"] == 742
+    assert score["bureau"] == "Equifax"
 
 
 # --- V4: SQL injection through the accounts agent --------------------------

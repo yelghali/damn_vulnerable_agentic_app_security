@@ -287,6 +287,7 @@ async function loadPosture() {
       : 'Mode: <span class="vuln-badge">VULNERABLE baseline</span>' +
         (cfg.offline_mode ? " · offline" : "");
   sub.innerHTML += ` · model: ${cfg.model_label || cfg.model_backend || "unknown"}`;
+  if (cfg.data_backend) sub.innerHTML += ` · data: ${cfg.data_backend}`;
 
   const switchBox = $("mode-switch");
   if (switchBox) {

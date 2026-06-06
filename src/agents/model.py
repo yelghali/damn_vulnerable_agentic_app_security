@@ -36,6 +36,20 @@ logger = logging.getLogger("zava.model")
 _AOAI_API_VERSION = "2024-10-21"
 
 
+class ModelSafetyBlocked(RuntimeError):
+    """Raised when the Azure Foundry deployment blocks a model request."""
+
+
+def _raise_if_content_filter(exc: Exception) -> None:
+    body = getattr(exc, "body", None)
+    error = body.get("error", {}) if isinstance(body, dict) else {}
+    text = str(exc)
+    if error.get("code") == "content_filter" or "content_filter" in text or "ResponsibleAIPolicyViolation" in text:
+        raise ModelSafetyBlocked(
+            "Azure Foundry content filter blocked this prompt or retrieved context."
+        ) from exc
+
+
 def _ensure_azure_cli_on_path() -> None:
     """Help DefaultAzureCredential find Azure CLI in local Windows labs."""
     az_dir = Path(r"C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin")
@@ -180,11 +194,15 @@ def compose_answer(system_prompt: str, user_message: str, context: str = "") -> 
             credential=credential,
         )
         client = project.get_openai_client()
-    completion = client.chat.completions.create(
-        model=settings.active_model_deployment,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"{user_message}\n\nContext:\n{context}"},
-        ],
-    )
+    try:
+        completion = client.chat.completions.create(
+            model=settings.active_model_deployment,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"{user_message}\n\nContext:\n{context}"},
+            ],
+        )
+    except Exception as exc:
+        _raise_if_content_filter(exc)
+        raise
     return completion.choices[0].message.content or ""

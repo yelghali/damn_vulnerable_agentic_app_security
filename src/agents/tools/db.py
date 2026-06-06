@@ -12,8 +12,9 @@ tool surface in two modes:
     - parameterized queries only
     - row-level access enforced against the authenticated principal
 
-For local validation (``OFFLINE_MODE=true``) the same logic runs against a
-seeded SQLite database so the lab is testable without Azure.
+For local validation (``OFFLINE_MODE=true`` or ``LOCAL_DATA_MODE=true``) the same
+logic runs against a seeded SQLite database so the lab is testable without Azure
+PostgreSQL even when the model is a real remote Azure Foundry deployment.
 """
 
 from __future__ import annotations
@@ -55,7 +56,7 @@ def _is_admin(caller_groups: list[str] | None = None) -> bool:
 
 
 def _postgres_conn(*, admin: bool = False):
-    """Connect to Azure Database for PostgreSQL when OFFLINE_MODE=false.
+    """Connect to Azure Database for PostgreSQL when local data mode is off.
 
     LAB-VULN(V4): the vulnerable baseline deliberately uses the admin
     connection. The secure path uses the least-privilege application role that
@@ -65,7 +66,7 @@ def _postgres_conn(*, admin: bool = False):
     conninfo = settings.pg_admin_connection if admin or not settings.enable_tool_least_priv else settings.pg_app_connection
     if not conninfo:
         which = "PG_APP_CONNECTION" if settings.enable_tool_least_priv else "PG_ADMIN_CONNECTION"
-        raise ToolError(f"{which} is required when OFFLINE_MODE=false.")
+        raise ToolError(f"{which} is required when OFFLINE_MODE=false and LOCAL_DATA_MODE=false.")
     try:
         import psycopg  # noqa: PLC0415
         from psycopg.rows import dict_row  # noqa: PLC0415
@@ -84,12 +85,12 @@ def reset_offline_db() -> None:
 
 def _conn(*, admin: bool = False):
     settings = get_settings()
-    return _offline_conn() if settings.offline_mode else _postgres_conn(admin=admin)
+    return _offline_conn() if settings.offline_mode or settings.local_data_mode else _postgres_conn(admin=admin)
 
 
 def _set_security_context(conn: Any, *, caller_id: str | None, customer_id: str | None = None) -> None:
     settings = get_settings()
-    if settings.offline_mode or not settings.enable_tool_least_priv:
+    if settings.offline_mode or settings.local_data_mode or not settings.enable_tool_least_priv:
         return
     owner_user_id = settings.default_owner_user_id
     conn.execute("SELECT set_config('app.owner_user_id', %s, true)", (owner_user_id,))
@@ -106,7 +107,8 @@ def _rows_to_dicts(rows: Iterable[Any]) -> list[dict[str, Any]]:
 
 def _ph() -> str:
     """Parameter placeholder for the active database driver."""
-    return "?" if get_settings().offline_mode else "%s"
+    settings = get_settings()
+    return "?" if settings.offline_mode or settings.local_data_mode else "%s"
 
 
 def _authorize(caller_id: str | None, customer_id: str, caller_groups: list[str] | None = None) -> None:
