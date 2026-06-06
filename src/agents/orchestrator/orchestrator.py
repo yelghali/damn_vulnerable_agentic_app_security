@@ -58,10 +58,10 @@ def _route(message: str) -> str:
         return "transactions"
     if any(k in low for k in ("report", "summary", "chart", "summarize")):
         return "reporting"
-    if any(k in low for k in ("account", "balance", "transaction", "credit", "score")):
-        return "accounts"
     if any(k in low for k in ("document", "policy", "disclosure", "fee", "interest", "terms")):
         return "knowledge"
+    if any(k in low for k in ("account", "balance", "transaction", "credit", "score")):
+        return "accounts"
     return "knowledge"
 
 
@@ -128,10 +128,6 @@ def handle_turn(message: str, ctx: AgentContext) -> TurnResult:
         result = reporting_agent.run(message, ctx)
     else:
         result = knowledge_agent.run(message, ctx)
-
-    # If the agent only returned tool data, let the model phrase it.
-    if result.agent in {"accounts", "reporting"} and not result.blocked:
-        result.answer = compose_answer(load_system_prompt(), message, result.answer)
 
     result.events = events + result.events
 

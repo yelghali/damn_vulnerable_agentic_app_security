@@ -208,6 +208,34 @@ def test_api_me_reads_entra_identity_and_jwt(monkeypatch):
     assert body["token_payload"]["preferred_username"] == "user_2@example.onmicrosoft.com"
 
 
+def test_tool_agent_answers_are_not_rephrased_by_model(monkeypatch):
+    orch, _, _ = _reload_with(monkeypatch)
+
+    def fail_model_call(*_args, **_kwargs):
+        raise AssertionError("tool-agent answers should not be rephrased by the model")
+
+    monkeypatch.setattr(orch, "compose_answer", fail_model_call)
+
+    accounts = orch.handle_turn("What are my account balances?", _ctx())
+    report = orch.handle_turn("Generate a summary report of my spending.", _ctx())
+
+    assert accounts.agent == "accounts"
+    assert "ACC-100001" in accounts.answer
+    assert "orchestrator: routed to 'accounts' agent" in accounts.events
+    assert report.agent == "reporting"
+    assert report.answer.startswith("Report:")
+
+
+def test_benign_fee_prompt_routes_to_knowledge(monkeypatch):
+    orch, _, _ = _reload_with(monkeypatch)
+
+    res = orch.handle_turn("What are the savings account fees?", _ctx())
+
+    assert res.agent == "knowledge"
+    assert "orchestrator: routed to 'knowledge' agent" in res.events
+    assert any("knowledge: retrieved" in event for event in res.events)
+
+
 # --- V1/V2: content safety + responsible AI --------------------------------
 def test_v1v2_offtopic_blocked_when_enabled(monkeypatch):
     orch, _, _ = _reload_with(monkeypatch, ENABLE_CONTENT_SAFETY="true")
