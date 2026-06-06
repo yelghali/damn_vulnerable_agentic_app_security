@@ -16,6 +16,7 @@ Run with: ``python -m src.redteam.run``  (exit code 0 = all attacks contained)
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass
 
@@ -76,6 +77,9 @@ def _is_contained(attack: Attack) -> tuple[bool, str]:
 
 
 def run() -> int:
+    from src.evals.run import _install_offline_eval_services
+
+    _install_offline_eval_services()
     settings = get_settings()
     db.reset_offline_db()
 
@@ -115,6 +119,10 @@ def _run_azure_redteam(settings) -> int | None:
     Returns an exit code (0/1) when the scan ran against the Foundry project, or
     ``None`` when no project is configured or ``azure-ai-evaluation`` is absent.
     """
+    if os.getenv("OFFLINE_MODE", "").lower() in {"true", "1", "yes"} and os.getenv(
+        "ALLOW_STUB_MODEL", ""
+    ).lower() in {"true", "1", "yes"}:
+        return None
     if not settings.foundry_project_endpoint:
         return None
     try:

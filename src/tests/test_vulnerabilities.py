@@ -572,6 +572,31 @@ def test_v6_poisoned_doc_shielded_when_enabled(monkeypatch):
     assert any("BLOCKED document" in e for e in res.events)
 
 
+def test_groundedness_disabled_allows_answer_without_sources(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_GROUNDEDNESS="false")
+    from src.agents.guard.guard import check_groundedness
+
+    assert check_groundedness("Unsupported claim", []) is True
+
+
+def test_groundedness_enabled_calls_azure_detector(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_GROUNDEDNESS="true")
+    from src.agents.guard import guard
+
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_groundedness(
+        answer: str, sources: list[str], _creds: tuple[str, str | None]
+    ) -> bool:
+        calls.append((answer, sources))
+        return False
+
+    monkeypatch.setattr(guard, "_azure_check_groundedness", fake_groundedness)
+
+    assert guard.check_groundedness("Transfer funds now", ["Savings APY is 3.5%."]) is False
+    assert calls == [("Transfer funds now", ["Savings APY is 3.5%."])]
+
+
 # --- V8: code sandbox -------------------------------------------------------
 def test_v8_sandbox_blocks_imports(monkeypatch):
     _reload_with(monkeypatch, ENABLE_CODE_SANDBOX="true")
