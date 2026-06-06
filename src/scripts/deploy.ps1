@@ -32,6 +32,10 @@
 .PARAMETER EnvFile
   Path to the .env file to update. Defaults to ./.env at the repo root.
 
+.PARAMETER TerraformPath
+  Optional path to terraform.exe. If omitted, the script checks PATH and common
+  Windows install locations such as WinGet, Chocolatey, and Program Files.
+
 .EXAMPLE
   ./src/scripts/deploy.ps1
   ./src/scripts/deploy.ps1 -SecureMode -DeployApim
@@ -46,7 +50,8 @@ param(
     [string]$AppRegistryUsername,
     [string]$AppRegistryPassword,
     [switch]$AppAzureMode,
-    [string]$EnvFile
+    [string]$EnvFile,
+    [string]$TerraformPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -64,11 +69,43 @@ if ($DeployApp -and -not $AppImage) {
   throw "-AppImage is required with -DeployApp. Build/push the Dockerfile first, then pass the image name."
 }
 
+function Resolve-TerraformPath([string]$ExplicitPath) {
+  if ($ExplicitPath) {
+    if (Test-Path $ExplicitPath) { return (Resolve-Path $ExplicitPath).Path }
+    throw "TerraformPath was provided but not found: $ExplicitPath"
+  }
+
+  $cmd = Get-Command terraform -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
+
+  $candidates = @(
+    "C:\Program Files\Terraform\terraform.exe",
+    "C:\Program Files\HashiCorp\Terraform\terraform.exe",
+    "C:\ProgramData\chocolatey\bin\terraform.exe",
+    "C:\tools\terraform\terraform.exe",
+    (Join-Path $env:LOCALAPPDATA "Programs\Terraform\terraform.exe")
+  )
+  $wingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+  if (Test-Path $wingetRoot) {
+    $candidates += Get-ChildItem -Path $wingetRoot -Filter terraform.exe -Recurse -ErrorAction SilentlyContinue |
+      Select-Object -ExpandProperty FullName
+  }
+
+  foreach ($candidate in $candidates) {
+    if ($candidate -and (Test-Path $candidate)) { return (Resolve-Path $candidate).Path }
+  }
+
+  throw "terraform.exe was not found on PATH or in common install locations. Pass -TerraformPath <path-to-terraform.exe>."
+}
+
+$terraform = Resolve-TerraformPath $TerraformPath
+Write-Host "==> Terraform : $terraform"
+
 # --- Terraform apply --------------------------------------------------------
 Push-Location $infraDir
 try {
-    terraform init -input=false
-    terraform apply -input=false -auto-approve `
+  & $terraform init -input=false
+  & $terraform apply -input=false -auto-approve `
         -var ("secure_mode=" + $SecureMode.ToString().ToLower()) `
         -var ("deploy_apim=" + $DeployApim.ToString().ToLower()) `
         -var ("deploy_app=" + $DeployApp.ToString().ToLower()) `
@@ -78,7 +115,7 @@ try {
         -var ("app_registry_username=" + $AppRegistryUsername) `
         -var ("app_registry_password=" + $AppRegistryPassword)
 
-    $tf = terraform output -json | ConvertFrom-Json
+    $tf = & $terraform output -json | ConvertFrom-Json
 }
 finally {
     Pop-Location
@@ -110,6 +147,10 @@ $map = [ordered]@{
     )
     "PG_MCP_SERVER_URL"             = Get-Out "pg_mcp_server_url"
     "APP_URL"                       = Get-Out "app_url"
+}
+
+if ($map["FOUNDRY_UNGOVERNED_DEPLOYMENT"] -eq $map["FOUNDRY_MODEL_DEPLOYMENT"]) {
+  Write-Warning "FOUNDRY_UNGOVERNED_DEPLOYMENT equals the governed deployment. Azure-backed vulnerable model demos may be blocked by platform filters unless enable_ungoverned_model=true was applied with an approved RAI exception."
 }
 
 # --- Merge into .env (preserve existing keys, append/replace mapped ones) ----

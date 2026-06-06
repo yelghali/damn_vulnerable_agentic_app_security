@@ -312,27 +312,53 @@ def auth_callback(request: Request):
     settings = get_settings()
     error = request.query_params.get("error")
     if error:
-        return HTMLResponse(f"Entra login failed: {error}", status_code=400)
+        description = request.query_params.get("error_description", "")
+        logging.warning("Entra login returned error: %s %s", error, description)
+        detail = f": {description}" if description else ""
+        return HTMLResponse(f"Entra login failed: {error}{detail}", status_code=400)
     flow = _decode_cookie_json(request.cookies.get(_AUTH_FLOW_COOKIE)) or {}
-    if not flow or flow.get("state") != request.query_params.get("state"):
+    if not flow:
+        logging.warning("Entra login failed: auth flow cookie is missing or invalid.")
+        return HTMLResponse(
+            "Entra login failed: local auth state was lost. Start sign-in again.",
+            status_code=400,
+        )
+    if flow.get("state") != request.query_params.get("state"):
+        logging.warning("Entra login failed: state mismatch.")
         return HTMLResponse("Entra login failed: invalid state.", status_code=400)
 
     import httpx  # noqa: PLC0415
 
-    token_response = httpx.post(
-        f"{_auth_authority()}/token",
-        data={
-            "client_id": settings.entra_api_client_id,
-            "grant_type": "authorization_code",
-            "code": request.query_params.get("code", ""),
-            "redirect_uri": flow["redirect_uri"],
-            "code_verifier": flow["verifier"],
-        },
-        timeout=20.0,
-    )
+    try:
+        token_response = httpx.post(
+            f"{_auth_authority()}/token",
+            data={
+                "client_id": settings.entra_api_client_id,
+                "grant_type": "authorization_code",
+                "code": request.query_params.get("code", ""),
+                "redirect_uri": flow["redirect_uri"],
+                "code_verifier": flow["verifier"],
+            },
+            timeout=20.0,
+        )
+    except httpx.HTTPError as exc:
+        logging.exception("Entra token exchange failed before receiving a response.")
+        return HTMLResponse(f"Entra token exchange failed: {exc}", status_code=502)
     if token_response.status_code >= 400:
+        logging.warning(
+            "Entra token exchange returned %s: %s",
+            token_response.status_code,
+            token_response.text,
+        )
         return HTMLResponse(f"Entra token exchange failed: {token_response.text}", status_code=400)
-    token_body = token_response.json()
+    try:
+        token_body = token_response.json()
+    except ValueError as exc:
+        logging.exception("Entra token exchange returned non-JSON content.")
+        return HTMLResponse(f"Entra token exchange failed: invalid token response ({exc})", status_code=502)
+    if not token_body.get("id_token"):
+        logging.warning("Entra token exchange response did not include an id_token.")
+        return HTMLResponse("Entra token exchange failed: missing id_token.", status_code=502)
     response = RedirectResponse("/")
     response.delete_cookie(_AUTH_FLOW_COOKIE)
     response.set_cookie(
