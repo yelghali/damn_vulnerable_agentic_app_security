@@ -758,6 +758,25 @@ def test_v9_chat_routes_account_reads_through_mcp_when_enabled(monkeypatch):
     assert "ACC-100001" in res.answer
 
 
+def test_v9_ui_probe_blocks_state_change_when_mcp_security_enabled(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_MCP_TOOL_SECURITY="false", ENABLE_HITL="false")
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    client = TestClient(app)
+    vulnerable = client.post("/api/lab/mcp-transfer-probe").json()
+    secure_config = client.post(
+        "/api/config/toggles",
+        json={"controls": {"mcp_tool_security": True}},
+    ).json()
+    secure = client.post("/api/lab/mcp-transfer-probe").json()
+
+    assert vulnerable["blocked"] is False
+    assert secure_config["mcp_tool_security"] is True
+    assert secure["blocked"] is True
+    assert "MCP tool 'transfer_funds' is not on this agent's allow-list" in secure["answer"]
+
+
 def test_v9_guard_rescans_poisoned_mcp_output_when_enabled(monkeypatch):
     _reload_with(monkeypatch, ENABLE_MCP_TOOL_SECURITY="true", ENABLE_PROMPT_SHIELDS="true")
     from src.agents.guard.guard import SafetyViolation, scan_tool_output
@@ -872,3 +891,20 @@ def test_v7_safe_error_when_enabled(monkeypatch):
     msg = format_error(ValueError("db connection failed: password=hunter2 at /app/db.py:42"))
     assert "hunter2" not in msg
     assert "internal error" in msg.lower()
+
+
+def test_v7_ui_probe_switches_verbose_to_safe_error(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_SECURE_RUNTIME="false")
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    client = TestClient(app)
+    vulnerable = client.post("/api/chat", json={"message": "__lab_v7_error__"}).json()
+    client.post("/api/config/toggles", json={"controls": {"secure_runtime": True}})
+    secure = client.post("/api/chat", json={"message": "__lab_v7_error__"}).json()
+
+    assert vulnerable["blocked"] is True
+    assert "hunter2" in vulnerable["answer"]
+    assert secure["blocked"] is True
+    assert "hunter2" not in secure["answer"]
+    assert "internal error" in secure["answer"].lower()

@@ -320,6 +320,41 @@ def reset_gateway(request: Request) -> dict:
     return {"status": "reset", **_config_summary(request)}
 
 
+@app.post("/api/lab/mcp-transfer-probe", response_model=ChatResponse)
+def mcp_transfer_probe(request: Request) -> ChatResponse:
+    if not _runtime_toggles_allowed(request):
+        raise HTTPException(status_code=403, detail="Runtime lab probes are disabled for this host.")
+    from src.agents.tools.mcp import call_mcp_tool  # noqa: PLC0415
+
+    identity = _identity_from_request(request)
+    ctx = AgentContext(
+        customer_id=identity.customer_id or get_settings().default_customer_id,
+        groups=identity.zava_groups or identity.groups or ["retail-customers"],
+    )
+    try:
+        result = call_mcp_tool(
+            "transfer_funds",
+            ctx,
+            from_account="ACC-100001",
+            to_account="ACC-200001",
+            amount=1,
+            caller_id=ctx.customer_id,
+            caller_groups=ctx.groups,
+            approved=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - lab probe reports the boundary decision
+        return ChatResponse(
+            answer=str(exc), agent="mcp",
+            events=["mcp: state-changing transfer_funds probe blocked"],
+            blocked=True, requires_approval=None, sources=[],
+        )
+    return ChatResponse(
+        answer=f"MCP transfer probe executed: {result['data']}", agent="mcp",
+        events=[f"mcp: transfer_funds executed via {result['server']}"],
+        blocked=False, requires_approval=None, sources=[],
+    )
+
+
 @app.get("/api/me", response_model=IdentityInfo)
 def me(request: Request, include_token: bool = False) -> IdentityInfo:
     return _identity_from_request(request, include_token=include_token)
@@ -487,6 +522,8 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
                 blocked=True, requires_approval=None, sources=[],
             )
     try:
+        if req.message == "__lab_v7_error__":
+            raise RuntimeError("debug leak: db password=hunter2 at C:/zava/app/db.py:42")
         result = handle_turn(req.message, ctx)
     except ModelSafetyBlocked as exc:
         logging.info("chat turn blocked by model safety policy: %s", exc)
