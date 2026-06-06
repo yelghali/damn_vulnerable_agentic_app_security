@@ -122,8 +122,8 @@
       <input id="customer" type="text" value="CUST-1001" title="Customer used for lab requests. In secure mode this comes from the signed-in Zava customer." />
       <span>Access groups</span>
       <input id="groups" type="text" value="retail-customers" />
-      <span class="pill" id="identity-pill" title="The baseline trusts editable customer values — that's vulnerability V5 (IDOR).">editable &#9888;</span>
-      <span class="identity-summary" id="identity-summary">checking identity...</span>
+      <span class="pill" id="identity-pill" title="In baseline mode, you can edit this customer context to demonstrate V5 broken authorization.">baseline lab input</span>
+      <span class="identity-summary" id="identity-summary">checking customer context...</span>
       <span id="identity-actions">loading...</span>
       <button class="ghost" id="reveal-token-btn" type="button">Show backend JWT</button>
       <div class="tokenbox" id="token-box"></div>
@@ -180,6 +180,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=2026-06-customer-context-2"></script>
+  <script src="/static/app.js?v=2026-06-real-models"></script>
 </body>
 </html>

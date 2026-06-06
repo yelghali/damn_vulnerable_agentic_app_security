@@ -4,10 +4,9 @@ Each test proves two things:
   * with the relevant ENABLE_* toggle OFF, the vulnerable behavior is present;
   * with it ON, the secure behavior holds.
 
-These run fully offline (OFFLINE_MODE=true) with the seeded SQLite DB and an
-explicitly enabled stub model, so `pytest` is green with no Azure resources.
-They double as the "verify" step participants run at the end of each workshop
-module.
+These run with OFFLINE_MODE=true and the seeded SQLite DB. Tests that reach the
+model require Foundry Local or another OpenAI-compatible LOCAL_MODEL_ENDPOINT;
+the runtime does not provide a fake model fallback.
 """
 
 from __future__ import annotations
@@ -32,7 +31,7 @@ def _reload_with(monkeypatch: pytest.MonkeyPatch, **env: str):
         "ENABLE_MCP_TOOL_SECURITY", "ENABLE_AI_GATEWAY", "ENABLE_A2A_GUARD",
         "ENABLE_RUNTIME_TOGGLES",
         "USE_MCP_TOOLS", "PG_MCP_SERVER_URL", "MCP_TOOL_ALLOWLIST",
-        "AI_GATEWAY_TOKEN_LIMIT", "ALLOW_STUB_MODEL",
+        "AI_GATEWAY_TOKEN_LIMIT",
         "CONTENT_SAFETY_ENDPOINT", "CONTENT_SAFETY_KEY", "LANGUAGE_ENDPOINT",
         "LANGUAGE_KEY", "SEARCH_ENDPOINT", "SEARCH_KEY",
         "CONTENT_SAFETY_SEVERITY_THRESHOLD", "CONTENT_SAFETY_BLOCK_OFF_TOPIC",
@@ -40,7 +39,6 @@ def _reload_with(monkeypatch: pytest.MonkeyPatch, **env: str):
         "CONTENT_SAFETY_THRESHOLD_VIOLENCE", "CONTENT_SAFETY_THRESHOLD_SELF_HARM",
     ):
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("ALLOW_STUB_MODEL", "true")
     for key, value in env.items():
         monkeypatch.setenv(key, value)
 

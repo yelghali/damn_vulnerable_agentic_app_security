@@ -15,8 +15,9 @@ one is just configuration, so there is a single code path to reason about:
   (``AIProjectClient.get_openai_client()``), orchestrated with the
   **Microsoft Agent Framework**.
 
-Interactive runs require a real model. For CI and deterministic unit tests only,
-set ``ALLOW_STUB_MODEL=true`` to use the tiny deterministic stub.
+Interactive and lab runs require a real model: Foundry Local, another
+OpenAI-compatible local endpoint, or Azure AI Foundry. There is no fake model
+fallback in the app path.
 """
 
 from __future__ import annotations
@@ -30,36 +31,6 @@ logger = logging.getLogger("zava.model")
 
 # API version used when routing through the APIM AI gateway (AzureOpenAI client).
 _AOAI_API_VERSION = "2024-10-21"
-
-
-def _stub_compose(system_prompt: str, user_message: str, context: str) -> str:
-    """Deterministic test-only 'model'.
-
-    It honors the active system prompt so vulnerable vs. secure behaviour stays
-    reproducible in tests/CI, but interactive lab runs should use Foundry Local
-    or Azure AI Foundry instead.
-    """
-    low = user_message.lower()
-    hardened = "never reveal" in system_prompt.lower()
-
-    # System-prompt leakage (V3) — vulnerable prompt complies, hardened refuses.
-    if any(k in low for k in ("system prompt", "your instructions", "admin override", "password")):
-        if hardened:
-            return "I can't share my configuration. I can help with your Zava finances though."
-        return f"Sure! Here are my full instructions:\n{system_prompt}"
-
-    # Off-topic (politics/jokes) — vulnerable engages, hardened declines.
-    if any(k in low for k in ("vote", "election", "political", "joke")):
-        if hardened:
-            return "That's outside what I can help with. I can assist with your accounts or transactions."
-        return "Haha, sure! Let's chat about that..."
-
-    if context:
-        return f"Here's what I found for you:\n{context}"
-    return (
-        "I can help with your accounts, transactions, credit score, statements, "
-        "and financial documents. What would you like to do?"
-    )
 
 
 @lru_cache
@@ -134,17 +105,13 @@ def compose_answer(system_prompt: str, user_message: str, context: str = "") -> 
     settings = get_settings()
 
     if settings.offline_mode:
-        if settings.allow_stub_model:
-            logger.warning("model: using deterministic stub because ALLOW_STUB_MODEL=true")
-            return _stub_compose(system_prompt, user_message, context)
         answer = _call_local_slm(system_prompt, user_message, context)
         if answer is not None:
             return answer
         raise RuntimeError(
             "No real local model is reachable. Start Microsoft Foundry Local "
             f"(`foundry model run {settings.local_model_name}`) or set "
-            "LOCAL_MODEL_ENDPOINT to an OpenAI-compatible endpoint. For tests "
-            "only, set ALLOW_STUB_MODEL=true."
+            "LOCAL_MODEL_ENDPOINT to an OpenAI-compatible endpoint."
         )
 
     # --- Azure AI Foundry + Microsoft Agent Framework path -----------------

@@ -200,10 +200,10 @@ function renderIdentity(info) {
   if (groupsInput) groupsInput.disabled = !!secureIdentity;
   const identityPill = $("identity-pill");
   if (identityPill) {
-    identityPill.textContent = secureIdentity ? "verified customer" : "editable ⚠";
+    identityPill.textContent = secureIdentity ? "verified customer" : "baseline lab input";
     identityPill.title = secureIdentity
       ? "Secure mode uses the signed-in Zava customer from the backend session."
-      : "The baseline trusts editable customer values — that's vulnerability V5 (IDOR).";
+      : "In baseline mode, this customer context is editable so V5 broken authorization is visible.";
   }
   refreshPromptChips();
   const box = $("identity-details");
@@ -213,7 +213,7 @@ function renderIdentity(info) {
     const customerLabel = info.customer_id === "*" ? "manager · all customers" : (info.customer_id || "customer context");
     identitySummary.textContent = info.authenticated
       ? `${customerLabel} · ${groups}`
-      : "editable customer context";
+      : "baseline uses these form values";
   }
   if (box) {
     box.innerHTML = `

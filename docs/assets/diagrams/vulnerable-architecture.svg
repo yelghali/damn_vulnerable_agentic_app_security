@@ -33,7 +33,7 @@
   <path class="arrow" d="M710 288v54"/>
   <rect class="data" x="548" y="342" width="150" height="62"/>
   <text class="s" x="586" y="370">Local SLM</text>
-  <text class="small" x="576" y="390">or stub fallback</text>
+  <text class="small" x="576" y="390">or local SLM endpoint</text>
   <rect class="data" x="724" y="342" width="150" height="62"/>
   <text class="s" x="760" y="370">Local docs</text>
   <text class="small" x="747" y="390">markdown search</text>

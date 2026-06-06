@@ -215,7 +215,7 @@ Then prove it holds with **evaluations** and **AI red teaming**.
 
 <div class="tip" data-title="Part 1 needs zero Azure">
 
-> The entire app and every *exploit* + *verify* step run **locally** (`OFFLINE_MODE=true`) against a seeded SQLite database and a **real small language model** served by **Microsoft Foundry Local** — the same OpenAI-compatible client surface as Azure AI Foundry, but free and on your machine. You can complete **all of Part 1** and run the whole `pytest` suite **before** you provision any Azure resources. Part 2's Azure deployment makes the *platform* controls (Content Safety, Prompt Shields, APIM gateway, Entra OBO) real. (If Foundry Local isn't running, the app falls back to a deterministic stub so nothing breaks.)
+> The entire app and every *exploit* + *verify* step run **locally** (`OFFLINE_MODE=true`) against a seeded SQLite database and a **real small language model** served by **Microsoft Foundry Local** — the same OpenAI-compatible client surface as Azure AI Foundry, but free and on your machine. You can complete **all of Part 1** before you provision any Azure resources. Part 2's Azure deployment makes the *platform* controls (Content Safety, Prompt Shields, APIM gateway, Entra OBO) real. If Foundry Local or another OpenAI-compatible local model is not reachable, the app fails loudly instead of using a fake model.
 
 </div>
 
@@ -291,7 +291,7 @@ Install **Foundry Local** and pull a small model so the app runs against a real 
 foundry model run phi-3.5-mini   # downloads + serves the SLM; the app auto-discovers it
 ```
 
-> Prefer Ollama? Set `LOCAL_MODEL_ENDPOINT=http://localhost:11434/v1` and `LOCAL_MODEL_NAME=phi3.5` in `.env`. No local model at all? The app falls back to a deterministic stub so every exploit still works.
+> Prefer Ollama? Set `LOCAL_MODEL_ENDPOINT=http://localhost:11434/v1` and `LOCAL_MODEL_NAME=phi3.5` in `.env`. No local model at all? Start Foundry Local/Ollama first; the lab does not use a fake AI model fallback.
 
 Seed the local database (Postgres seed also runs against SQLite offline) and start the app:
 
@@ -602,7 +602,7 @@ There are three layers to this control. The **canonical** one lives on **Foundry
 
 #### (a) The secure design & code
 
-> **Is this mocked? No.** [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py) calls the **genuine** Azure AI Content Safety `text:analyze` service when `ENABLE_CONTENT_SAFETY=true`. Unit tests use fake Azure responses so CI stays offline, but the app's secure path requires `CONTENT_SAFETY_ENDPOINT` + key and fails closed if the service is missing or errors. There is no local keyword fallback for secure checks.
+> **Is this mocked? No.** [src/agents/guard/guard.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/guard/guard.py) calls the **genuine** Azure AI Content Safety `text:analyze` service when `ENABLE_CONTENT_SAFETY=true`. The app's secure path requires `CONTENT_SAFETY_ENDPOINT` + key and fails closed if the service is missing or errors. There is no local keyword fallback for secure checks.
 
 The request is sent to Azure, then the app applies your per-category thresholds to Azure's returned severities:
 
@@ -1305,7 +1305,7 @@ ENABLE_DOC_SECURITY=true
 
 <div class="important" data-title="No tenant admin?">
 
-> Use a pre-created app registration, or run this module as a **read-only walkthrough** with the provided fake Azure responses in tests. The secure app path still requires Azure AI Search for document security.
+> Use a pre-created app registration, or run this module as a **read-only walkthrough**. The secure app path still requires Azure AI Search for document security.
 
 </div>
 

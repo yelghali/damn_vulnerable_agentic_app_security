@@ -52,12 +52,11 @@ class Settings(BaseSettings):
     # OpenAI-compatible endpoint. Default runtime is Microsoft Foundry Local
     # (auto-discovered via foundry-local-sdk). Set LOCAL_MODEL_ENDPOINT to point
     # at any OpenAI-compatible server instead (e.g. Ollama: http://localhost:11434/v1).
-    # If nothing is reachable, the app fails loudly by default. Tests can opt
-    # into the deterministic stub with ALLOW_STUB_MODEL=true.
+    # If nothing is reachable, the app fails loudly. The lab should always use
+    # an actual model, either local or Azure-hosted.
     local_model_name: str = Field(default="phi-3.5-mini", alias="LOCAL_MODEL_NAME")
     local_model_endpoint: str = Field(default="", alias="LOCAL_MODEL_ENDPOINT")
     local_model_key: str = Field(default="", alias="LOCAL_MODEL_KEY")
-    allow_stub_model: bool = Field(default=False, alias="ALLOW_STUB_MODEL")
 
     # --- Per-vulnerability toggles (None => inherit from secure_mode) -------
     enable_content_safety: bool | None = Field(default=None, alias="ENABLE_CONTENT_SAFETY")  # V1/V2
@@ -200,7 +199,6 @@ class Settings(BaseSettings):
             "runtime_toggles_enabled": self.enable_runtime_toggles,
             "model_backend": "foundry-local/openai-compatible" if self.offline_mode else "azure-ai-foundry",
             "model_label": model_label,
-            "allow_stub_model": self.allow_stub_model,
             "vulnerable_app_url": self.vulnerable_app_url,
             "secure_app_url": self.secure_app_url,
             "local_login": bool(self.azure_tenant_id and self.entra_api_client_id),
