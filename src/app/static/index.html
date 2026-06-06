@@ -60,6 +60,12 @@
     .side section:last-child { border-bottom: 0; }
     .toggles { display: grid; grid-template-columns: 1fr; gap: 6px; }
     .toggle { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
+    .toggle button { padding: 4px 8px; border-radius: 7px; font-size: 11px; background: #263244; color: #d8e3f8; }
+    .toggle button.on { background: #14532d; color: #bbf7d0; }
+    .toggle button.off { background: #4c1d24; color: #fecdd3; }
+    .toggle-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0 0 10px; }
+    .toggle-actions button { padding: 7px 8px; border-radius: 8px; font-size: 11px; background: #263244; }
+    .toggle-actions button:last-child { grid-column: 1 / -1; background: transparent; border: 1px solid var(--border); color: var(--muted); }
     .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-left: 8px; }
     .dot.on { background: var(--on); box-shadow: 0 0 6px var(--on); }
     .dot.off { background: var(--off); }
@@ -124,7 +130,8 @@
     <div class="card side">
       <section>
         <h3>Security posture</h3>
-        <div class="hint">Read-only view of the active controls. Toggle them in <code>.env</code> / config, then reload.</div>
+        <div class="hint">Local lab control panel. Use it to follow MOAW module-by-module, or flip every control on as the answer key.</div>
+        <div class="toggle-actions" id="toggle-actions"></div>
         <div class="toggles" id="toggles">loading&hellip;</div>
       </section>
       <section>
@@ -157,6 +164,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=2026-06-access-summary-prompts"></script>
+  <script src="/static/app.js?v=2026-06-runtime-toggles"></script>
 </body>
 </html>

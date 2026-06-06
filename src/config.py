@@ -20,6 +20,23 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+SECURITY_CONTROLS = {
+    "content_safety": "enable_content_safety",
+    "prompt_shields": "enable_prompt_shields",
+    "pii_redaction": "enable_pii_redaction",
+    "tool_least_priv": "enable_tool_least_priv",
+    "hitl": "enable_hitl",
+    "code_sandbox": "enable_code_sandbox",
+    "obo": "enable_obo",
+    "doc_security": "enable_doc_security",
+    "groundedness": "enable_groundedness",
+    "secure_runtime": "enable_secure_runtime",
+    "mcp_tool_security": "enable_mcp_tool_security",
+    "ai_gateway": "enable_ai_gateway",
+    "a2a_guard": "enable_a2a_guard",
+}
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
@@ -28,6 +45,7 @@ class Settings(BaseSettings):
     # --- Lab mode ----------------------------------------------------------
     offline_mode: bool = Field(default=True, alias="OFFLINE_MODE")
     secure_mode: bool = Field(default=False, alias="SECURE_MODE")
+    enable_runtime_toggles: bool = Field(default=False, alias="ENABLE_RUNTIME_TOGGLES")
 
     # --- Local SLM (offline backend) ---------------------------------------
     # In offline mode the app talks to a REAL small language model over an
@@ -144,21 +162,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _resolve_toggles(self) -> "Settings":
         """Any toggle left as None inherits the master ``secure_mode`` value."""
-        for name in (
-            "enable_content_safety",
-            "enable_prompt_shields",
-            "enable_pii_redaction",
-            "enable_tool_least_priv",
-            "enable_hitl",
-            "enable_code_sandbox",
-            "enable_obo",
-            "enable_doc_security",
-            "enable_groundedness",
-            "enable_secure_runtime",
-            "enable_mcp_tool_security",
-            "enable_ai_gateway",
-            "enable_a2a_guard",
-        ):
+        for name in SECURITY_CONTROLS.values():
             if getattr(self, name) is None:
                 object.__setattr__(self, name, self.secure_mode)
         return self
@@ -188,24 +192,13 @@ class Settings(BaseSettings):
         return {
             "secure_mode": self.secure_mode,
             "offline_mode": self.offline_mode,
+            "runtime_toggles_enabled": self.enable_runtime_toggles,
             "model_backend": "foundry-local/openai-compatible" if self.offline_mode else "azure-ai-foundry",
             "allow_stub_model": self.allow_stub_model,
             "vulnerable_app_url": self.vulnerable_app_url,
             "secure_app_url": self.secure_app_url,
             "local_login": bool(self.azure_tenant_id and self.entra_api_client_id),
-            "content_safety": bool(self.enable_content_safety),
-            "prompt_shields": bool(self.enable_prompt_shields),
-            "pii_redaction": bool(self.enable_pii_redaction),
-            "tool_least_priv": bool(self.enable_tool_least_priv),
-            "hitl": bool(self.enable_hitl),
-            "code_sandbox": bool(self.enable_code_sandbox),
-            "obo": bool(self.enable_obo),
-            "doc_security": bool(self.enable_doc_security),
-            "groundedness": bool(self.enable_groundedness),
-            "secure_runtime": bool(self.enable_secure_runtime),
-            "mcp_tool_security": bool(self.enable_mcp_tool_security),
-            "ai_gateway": bool(self.enable_ai_gateway),
-            "a2a_guard": bool(self.enable_a2a_guard),
+            **{key: bool(getattr(self, attr)) for key, attr in SECURITY_CONTROLS.items()},
         }
 
 

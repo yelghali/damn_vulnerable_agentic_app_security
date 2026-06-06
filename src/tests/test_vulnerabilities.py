@@ -30,6 +30,7 @@ def _reload_with(monkeypatch: pytest.MonkeyPatch, **env: str):
         "ENABLE_CODE_SANDBOX", "ENABLE_OBO", "ENABLE_DOC_SECURITY",
         "ENABLE_GROUNDEDNESS", "ENABLE_SECURE_RUNTIME",
         "ENABLE_MCP_TOOL_SECURITY", "ENABLE_AI_GATEWAY", "ENABLE_A2A_GUARD",
+        "ENABLE_RUNTIME_TOGGLES",
         "USE_MCP_TOOLS", "PG_MCP_SERVER_URL", "MCP_TOOL_ALLOWLIST",
         "AI_GATEWAY_TOKEN_LIMIT", "ALLOW_STUB_MODEL",
         "CONTENT_SAFETY_ENDPOINT", "CONTENT_SAFETY_KEY", "LANGUAGE_ENDPOINT",
@@ -230,6 +231,39 @@ def test_api_me_normalizes_legacy_manager_role(monkeypatch):
     assert body["user_id"] == "zava_manager"
     assert body["customer_id"] == "*"
     assert set(body["zava_groups"]) == {"retail-customers", "private-client", "zava-managers"}
+
+
+def test_runtime_lab_toggles_can_iterate_controls(monkeypatch):
+    _reload_with(monkeypatch, SECURE_MODE="false")
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+    from src.config import SECURITY_CONTROLS
+
+    client = TestClient(app)
+
+    baseline = client.get("/api/config").json()
+    assert baseline["runtime_toggles_allowed"] is True
+    assert baseline["content_safety"] is False
+
+    all_on = client.post("/api/config/toggles", json={"secure_mode": True}).json()
+    assert all_on["secure_mode"] is True
+    assert all(all_on[key] is True for key in SECURITY_CONTROLS)
+
+    partial = client.post("/api/config/toggles", json={"controls": {"hitl": False}}).json()
+    assert partial["secure_mode"] is True
+    assert partial["content_safety"] is True
+    assert partial["hitl"] is False
+
+    all_off = client.post("/api/config/toggles", json={"secure_mode": False}).json()
+    assert all_off["secure_mode"] is False
+    assert all(all_off[key] is False for key in SECURITY_CONTROLS)
+
+    bad = client.post("/api/config/toggles", json={"controls": {"not_a_control": True}})
+    assert bad.status_code == 400
+
+    reset = client.post("/api/config/toggles", json={"reset": True}).json()
+    assert reset["secure_mode"] is False
+    assert reset["content_safety"] is False
 
 
 def test_tool_agent_answers_are_not_rephrased_by_model(monkeypatch):

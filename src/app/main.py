@@ -22,14 +22,14 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from src.agents.orchestrator.orchestrator import handle_turn
 from src.agents.types import AgentContext
-from src.config import get_settings
+from src.config import SECURITY_CONTROLS, get_settings
 
 logging.basicConfig(level=logging.INFO)
 
@@ -45,6 +45,12 @@ class ChatRequest(BaseModel):
     customer_id: str | None = None
     groups: list[str] = Field(default_factory=lambda: ["retail-customers"])
     approved_action: dict | None = None
+
+
+class ToggleRequest(BaseModel):
+    secure_mode: bool | None = None
+    controls: dict[str, bool] = Field(default_factory=dict)
+    reset: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -261,8 +267,45 @@ def _identity_from_request(request: Request, req: ChatRequest | None = None, inc
 
 
 @app.get("/api/config")
-def config() -> dict:
-    return get_settings().summary()
+def config(request: Request) -> dict:
+    return _config_summary(request)
+
+
+def _runtime_toggles_allowed(request: Request) -> bool:
+    settings = get_settings()
+    host = request.client.host if request.client else ""
+    return settings.enable_runtime_toggles or host in {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+def _config_summary(request: Request) -> dict:
+    summary = get_settings().summary()
+    summary["runtime_toggles_allowed"] = _runtime_toggles_allowed(request)
+    summary["security_controls"] = list(SECURITY_CONTROLS)
+    return summary
+
+
+@app.post("/api/config/toggles")
+def update_toggles(req: ToggleRequest, request: Request) -> dict:
+    if not _runtime_toggles_allowed(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Runtime lab toggles are disabled for this host. Set ENABLE_RUNTIME_TOGGLES=true to allow them.",
+        )
+    if req.reset:
+        get_settings.cache_clear()
+        return _config_summary(request)
+    unknown = sorted(set(req.controls) - set(SECURITY_CONTROLS))
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown security control(s): {', '.join(unknown)}")
+
+    settings = get_settings()
+    if req.secure_mode is not None:
+        object.__setattr__(settings, "secure_mode", req.secure_mode)
+        for attr in SECURITY_CONTROLS.values():
+            object.__setattr__(settings, attr, req.secure_mode)
+    for key, enabled in req.controls.items():
+        object.__setattr__(settings, SECURITY_CONTROLS[key], enabled)
+    return _config_summary(request)
 
 
 @app.get("/api/me", response_model=IdentityInfo)

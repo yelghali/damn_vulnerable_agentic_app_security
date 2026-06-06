@@ -22,6 +22,8 @@ const TOGGLE_LABELS = {
   a2a_guard: "Agent-to-agent guard (V11)",
 };
 
+const CONTROL_KEYS = Object.keys(TOGGLE_LABELS);
+
 let currentIdentity = null;
 let currentConfig = null;
 
@@ -186,7 +188,7 @@ async function send(message, approved) {
 // --- Identity ---------------------------------------------------------------
 function renderIdentity(info) {
   currentIdentity = info;
-  const secureIdentity = currentConfig?.secure_mode && info.authenticated;
+  const secureIdentity = currentConfig?.obo && info.authenticated;
   const customerInput = $("customer");
   const groupsInput = $("groups");
   if (customerInput && secureIdentity) customerInput.value = info.customer_id || "";
@@ -266,12 +268,16 @@ async function loadPosture() {
   }
   currentConfig = cfg;
   if (currentIdentity) renderIdentity(currentIdentity);
-  const secure = cfg.secure_mode;
+  const enabledCount = CONTROL_KEYS.filter((key) => !!cfg[key]).length;
+  const secure = cfg.secure_mode && enabledCount === CONTROL_KEYS.length;
+  const partial = enabledCount > 0 && !secure;
   const sub = $("mode-sub");
   sub.innerHTML = secure
     ? 'Mode: <span class="secure-badge">SECURE (answer key)</span>'
-    : 'Mode: <span class="vuln-badge">VULNERABLE baseline</span>' +
-      (cfg.offline_mode ? " · offline" : "");
+    : partial
+      ? `Mode: <span class="secure-badge">GUIDED</span> · ${enabledCount}/${CONTROL_KEYS.length} controls on`
+      : 'Mode: <span class="vuln-badge">VULNERABLE baseline</span>' +
+        (cfg.offline_mode ? " · offline" : "");
   sub.innerHTML += ` · model: ${cfg.model_backend || "unknown"}`;
   if (cfg.allow_stub_model) sub.innerHTML += ' · <span class="vuln-badge">stub allowed</span>';
 
@@ -288,13 +294,67 @@ async function loadPosture() {
 
   const box = $("toggles");
   box.innerHTML = "";
+  renderToggleActions(cfg);
   for (const [key, label] of Object.entries(TOGGLE_LABELS)) {
     const on = !!cfg[key];
     const row = document.createElement("div");
     row.className = "toggle";
-    row.innerHTML = `<span>${label}</span><span class="dot ${on ? "on" : "off"}" title="${on ? "enabled" : "disabled"}"></span>`;
+    const control = cfg.runtime_toggles_allowed
+      ? `<button type="button" class="${on ? "on" : "off"}" data-toggle-key="${key}">${on ? "On" : "Off"}</button>`
+      : `<span class="dot ${on ? "on" : "off"}" title="${on ? "enabled" : "disabled"}"></span>`;
+    row.innerHTML = `<span>${label}</span>${control}`;
     box.appendChild(row);
   }
+  box.querySelectorAll("button[data-toggle-key]").forEach((button) => {
+    button.addEventListener("click", () => toggleControl(button.dataset.toggleKey));
+  });
+}
+
+async function updateRuntimeToggles(payload) {
+  try {
+    const res = await fetch("/api/config/toggles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "toggle update failed");
+    currentConfig = data;
+    loadPosture();
+    loadIdentity();
+  } catch (err) {
+    addMsg("Could not update lab controls: " + err, "bot", true);
+  }
+}
+
+function renderToggleActions(cfg) {
+  const actions = $("toggle-actions");
+  if (!actions) return;
+  if (!cfg.runtime_toggles_allowed) {
+    actions.innerHTML = `<div class="hint">Runtime lab toggles are disabled for this host. Set <code>ENABLE_RUNTIME_TOGGLES=true</code> for hosted workshop demos.</div>`;
+    return;
+  }
+  actions.innerHTML = "";
+  const baseline = document.createElement("button");
+  baseline.type = "button";
+  baseline.textContent = "Baseline";
+  baseline.title = "Turn every security control off for Part 1 / exploit mode.";
+  baseline.onclick = () => updateRuntimeToggles({ secure_mode: false });
+  const answerKey = document.createElement("button");
+  answerKey.type = "button";
+  answerKey.textContent = "All controls";
+  answerKey.title = "Turn every security control on, equivalent to SECURE_MODE=true.";
+  answerKey.onclick = () => updateRuntimeToggles({ secure_mode: true });
+  const reset = document.createElement("button");
+  reset.type = "button";
+  reset.textContent = "Reset to env / restart defaults";
+  reset.onclick = () => updateRuntimeToggles({ reset: true });
+  actions.append(baseline, answerKey, reset);
+}
+
+function toggleControl(key) {
+  if (!currentConfig || !Object.prototype.hasOwnProperty.call(TOGGLE_LABELS, key)) return;
+  updateRuntimeToggles({ controls: { [key]: !currentConfig[key] } });
 }
 
 // --- Chip rendering ----------------------------------------------------------
