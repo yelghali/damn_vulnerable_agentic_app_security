@@ -447,7 +447,7 @@ For browser-only learners, do **not** let every student mutate live security con
 
 Set `VULNERABLE_APP_URL` and `SECURE_APP_URL` (or Terraform `-var vulnerable_app_url=... -var secure_app_url=...`) so the web UI shows a **Mode switch** with links between the variants. This gives students a UI-driven experience without making security enforcement user-controlled.
 
-When hosted behind Entra authentication (Azure Container Apps auth/EasyAuth, App Service auth, or APIM validating JWTs), the app reads `x-ms-client-principal`, `x-ms-token-aad-access-token`, or the bearer token and shows the signed-in identity in the UI: user name, derived Zava customer, Zava groups (`retail-customers`, `private-client`, `zava-admins`), and a **Show backend JWT** button for lab inspection. In secure identity/OBO mode (`ENABLE_OBO=true`), chat ignores client-spoofed `customer_id`/`groups` and uses the validated identity context instead.
+When hosted behind Entra authentication (Azure Container Apps auth/EasyAuth, App Service auth, or APIM validating JWTs), the app reads `x-ms-client-principal`, `x-ms-token-aad-access-token`, or the bearer token and shows the signed-in identity in the UI: user name, derived Zava customer, Zava groups (`retail-customers`, `private-client`, `zava-managers`), and a **Show backend JWT** button for lab inspection. In secure identity/OBO mode (`ENABLE_OBO=true`), chat ignores client-spoofed `customer_id`/`groups` and uses the validated identity context instead.
 
 ### Multi-user classroom mode
 
@@ -480,7 +480,31 @@ python -m src.scripts.setup_lab_users --count 2 --tenant-domain <tenant>.onmicro
 python -m src.scripts.setup_lab_users --count 2 --tenant-domain <tenant>.onmicrosoft.com --emit-az-cli --group-assignment round-robin
 ```
 
-The generated CLI creates each Entra user, creates classroom content groups (`retail-customers`, `private-client`, `zava-admins`), creates per-learner ownership groups, resolves object IDs, and runs `az ad group member add` for the actual membership assignment. With `--group-assignment round-robin`, `user_1`, `user_2`, ... alternate between `retail-customers` and `private-client` so learners can immediately see different AI Search results. The generated `admin` user is added to both content groups plus `zava-admins`; that admin group bypasses AI Search trimming and Postgres/MCP object restrictions for instructor demos.
+The generated CLI creates Zava learner users (`user_1`, `user_2`, ...) and can optionally include `zava_manager` for elevated lab operations. It creates classroom app roles (`retail-customers`, `private-client`, `zava-managers`), creates per-learner ownership groups, resolves object IDs, and runs `az ad group member add` for the actual membership assignment. With `--group-assignment round-robin`, `user_1`, `user_2`, ... alternate between `retail-customers` and `private-client` so learners can immediately see different AI Search results. The real Entra setup script intentionally refuses `admin@...` and never creates or resets tenant admin accounts.
+
+For a real tenant-backed local-login lab, create the localhost auth app, Zava learner users, `zava_manager`, Entra app-role assignments, simple lab passwords, and constrained Azure Portal RBAC with:
+
+```bash
+python -m src.scripts.setup_entra_local_auth \
+    --tenant-domain <tenant>.onmicrosoft.com \
+    --resource-group <lab-rg-name> \
+    --reset-passwords
+```
+
+The default password template is `ZavaLab!01`, `ZavaLab!02`, ... for `user_1`, `user_2`, ...; `zava_manager` receives the next generated password in sequence. Override it with `--password-template` if your tenant password policy requires a different pattern. The script writes the sensitive password handoff file to `.zava-lab-users.local.json`, which is git-ignored.
+
+When `--resource-group` is set, every Zava lab user gets Azure RBAC only on the lab scope: `Reader` on the lab resource group so the Azure Portal shows the lab resources, and `Search Index Data Reader` on AI Search so they can inspect RAG index content. Only `zava_manager` receives higher lab setup rights: `Azure AI Developer` and `Cognitive Services Contributor` on the Azure AI/Foundry account, so that account can inspect and adjust Foundry/guardrail setup without subscription-wide access. Learners do not receive subscription-wide permissions or PostgreSQL data-plane credentials; PostgreSQL, Container Apps, Key Vault, Monitor, APIM, and Search service configuration remain read-only through the resource-group Reader role unless the instructor grants additional roles.
+
+After the workshop, delete only the generated Zava learner users with:
+
+```bash
+python -m src.scripts.cleanup_entra_lab_users \
+    --tenant-domain <tenant>.onmicrosoft.com \
+    --credentials-file .zava-lab-users.local.json \
+    --yes
+```
+
+The cleanup script defaults to a dry run unless `--yes` is supplied, refuses to delete admin/non-Zava accounts, removes Azure role assignments for the generated Zava users including `zava_manager`, and can also remove the local auth app with `--delete-app`.
 
 The shared PostgreSQL schema includes `owner_user_id`; the Azure seed step enables RLS policies over `owner_user_id` and `customer_id`. The shared AI Search index uses `group_ids`, so `user_1` and `user_2` can query the same index while receiving different documents. If the generic Azure PostgreSQL MCP server cannot set per-call session context for your tenant, put a thin Zava MCP facade in front of it that sets `app.owner_user_id` from the validated Entra token before issuing database queries.
 

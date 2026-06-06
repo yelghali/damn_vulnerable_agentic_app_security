@@ -9,7 +9,7 @@ Examples:
   python -m src.scripts.setup_lab_users
   python -m src.scripts.setup_lab_users --count 60 --tenant-domain contoso.onmicrosoft.com --format csv
   python -m src.scripts.setup_lab_users --count 2 --emit-az-cli
-    python -m src.scripts.setup_lab_users --count 2 --emit-az-cli --group-assignment round-robin
+    python -m src.scripts.setup_lab_users --count 2 --emit-az-cli --group-assignment round-robin --include-manager
 """
 
 from __future__ import annotations
@@ -23,7 +23,8 @@ from dataclasses import asdict, dataclass
 
 
 CONTENT_GROUPS = ("retail-customers", "private-client")
-ADMIN_GROUP = "zava-admins"
+MANAGER_GROUP = "zava-managers"
+MANAGER_USER_ID = "zava_manager"
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,7 @@ class LabUser:
     retail_group: str
     private_group: str
     assigned_groups: list[str]
-    is_admin: bool
+    is_manager: bool
     apim_gateway_base_path: str
     apim_openai_path: str
 
@@ -48,7 +49,14 @@ def _assigned_groups(index: int, mode: str, rng: random.Random) -> list[str]:
     return [CONTENT_GROUPS[(index - 1) % len(CONTENT_GROUPS)]]
 
 
-def build_users(count: int, prefix: str, tenant_domain: str, group_assignment: str = "round-robin", seed: int = 42) -> list[LabUser]:
+def build_users(
+    count: int,
+    prefix: str,
+    tenant_domain: str,
+    group_assignment: str = "round-robin",
+    seed: int = 42,
+    include_manager: bool = False,
+) -> list[LabUser]:
     users: list[LabUser] = []
     rng = random.Random(seed)
     for index in range(1, count + 1):
@@ -63,25 +71,26 @@ def build_users(count: int, prefix: str, tenant_domain: str, group_assignment: s
                 retail_group=f"zava-{user_id}-retail",
                 private_group=f"zava-{user_id}-private",
                 assigned_groups=_assigned_groups(index, group_assignment, rng),
-                is_admin=False,
+                is_manager=False,
                 apim_gateway_base_path=f"/{safe_id}",
                 apim_openai_path=f"/{safe_id}/openai",
             )
         )
-    users.append(
-        LabUser(
-            user_id="admin",
-            upn=f"admin@{tenant_domain}" if tenant_domain else "admin",
-            customer_id="*",
-            owner_user_id="admin",
-            retail_group="zava-admin-retail",
-            private_group="zava-admin-private",
-            assigned_groups=[*CONTENT_GROUPS, ADMIN_GROUP],
-            is_admin=True,
-            apim_gateway_base_path="/admin",
-            apim_openai_path="/admin/openai",
+    if include_manager:
+        users.append(
+            LabUser(
+                user_id=MANAGER_USER_ID,
+                upn=f"{MANAGER_USER_ID}@{tenant_domain}" if tenant_domain else MANAGER_USER_ID,
+                customer_id="*",
+                owner_user_id=MANAGER_USER_ID,
+                retail_group="zava-manager-retail",
+                private_group="zava-manager-private",
+                assigned_groups=[*CONTENT_GROUPS, MANAGER_GROUP],
+                is_manager=True,
+                apim_gateway_base_path="/zava-manager",
+                apim_openai_path="/zava-manager/openai",
+            )
         )
-    )
     return users
 
 
@@ -99,15 +108,15 @@ def emit_csv(users: list[LabUser]) -> None:
 
 def emit_az_cli(users: list[LabUser], private_users: set[str]) -> None:
     print("# Review before running. Requires Microsoft Graph permissions to create users/groups.")
-    print("# Learners are added to content groups used by AI Search group_ids. Admin is added to every content group plus zava-admins.")
+    print("# Learners are added to content groups used by AI Search group_ids.")
     group_vars: dict[str, str] = {}
-    for group in (*CONTENT_GROUPS, ADMIN_GROUP):
+    for group in (*CONTENT_GROUPS, MANAGER_GROUP):
         var = group.replace("-", "_") + "_group_id"
         group_vars[group] = var
         print(f"${var} = az ad group create --display-name {group} --mail-nickname {group} --query id -o tsv")
     print()
     for user in users:
-        display = user.user_id.replace("_", " ").title()
+        display = "Manager" if user.is_manager else user.user_id.replace("_", " ").title()
         user_var = f"{user.user_id}_id".replace("-", "_")
         retail_var = f"{user.user_id}_retail_group_id".replace("-", "_")
         private_var = f"{user.user_id}_private_group_id".replace("-", "_")
@@ -116,7 +125,7 @@ def emit_az_cli(users: list[LabUser], private_users: set[str]) -> None:
         print(f"${retail_var} = az ad group create --display-name {user.retail_group} --mail-nickname {user.retail_group} --query id -o tsv")
         print(f"${private_var} = az ad group create --display-name {user.private_group} --mail-nickname {user.private_group} --query id -o tsv")
         print(f"az ad group member add --group ${retail_var} --member-id ${user_var}")
-        if user.user_id in private_users or user.is_admin:
+        if user.user_id in private_users or user.is_manager:
             print(f"az ad group member add --group ${private_var} --member-id ${user_var}")
         else:
             print(f"# Optional private-doc access: az ad group member add --group ${private_var} --member-id ${user_var}")
@@ -147,6 +156,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--group-assignment", choices=("round-robin", "random", "all-retail"), default="round-robin", help="How learner content groups are assigned for AI Search ACL demos.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed when --group-assignment=random.")
     parser.add_argument("--emit-az-cli", action="store_true", help="Also print Azure CLI commands to create Entra users/groups.")
+    parser.add_argument("--include-manager", action="store_true", help="Also emit the optional zava_manager lab account for elevated lab operations.")
     parser.add_argument(
         "--private-users",
         default="",
@@ -159,7 +169,7 @@ def main() -> None:
     args = parse_args()
     if args.count < 1 or args.count > 100:
         raise SystemExit("--count must be between 1 and 100.")
-    users = build_users(args.count, args.prefix, args.tenant_domain, args.group_assignment, args.seed)
+    users = build_users(args.count, args.prefix, args.tenant_domain, args.group_assignment, args.seed, args.include_manager)
     if args.format == "csv":
         emit_csv(users)
     else:

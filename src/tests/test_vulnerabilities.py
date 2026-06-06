@@ -180,7 +180,7 @@ def test_api_me_reads_entra_identity_and_jwt(monkeypatch):
         "userId": "00000000-0000-0000-0000-000000000002",
         "claims": [
             {"typ": "roles", "val": "private-client"},
-            {"typ": "roles", "val": "zava-admins"},
+            {"typ": "roles", "val": "zava-managers"},
         ],
     }
     token = ".".join([
@@ -203,7 +203,7 @@ def test_api_me_reads_entra_identity_and_jwt(monkeypatch):
     assert body["authenticated"] is True
     assert body["user_id"] == "user_2"
     assert body["customer_id"] == "CUST-1002"
-    assert set(body["zava_groups"]) == {"private-client", "zava-admins"}
+    assert set(body["zava_groups"]) == {"private-client", "zava-managers"}
     assert body["token_present"] is True
     assert body["token_payload"]["preferred_username"] == "user_2@example.onmicrosoft.com"
 
@@ -507,7 +507,7 @@ def test_v5_doc_trimming_admin_sees_all(monkeypatch):
 
     from src.agents.tools.search import search_documents
 
-    docs = search_documents("private client terms", caller_groups=["zava-admins"])
+    docs = search_documents("private client terms", caller_groups=["zava-managers"])
     assert any(d["id"] == "private-client-terms" for d in docs)
 
 
@@ -522,7 +522,7 @@ def test_v5_no_trimming_exposes_restricted(monkeypatch):
 def test_v5_admin_can_read_other_customer_when_tool_security_enabled(monkeypatch):
     _, db, _ = _reload_with(monkeypatch, ENABLE_TOOL_LEAST_PRIV="true")
 
-    rows = db.get_accounts("CUST-1002", caller_id="CUST-1001", caller_groups=["zava-admins"])
+    rows = db.get_accounts("CUST-1002", caller_id="CUST-1001", caller_groups=["zava-managers"])
 
     assert rows
     assert rows[0]["account_id"].startswith("ACC-200")
@@ -598,7 +598,7 @@ def test_v9_mcp_admin_can_call_state_change_tool(monkeypatch):
 
     res = call_mcp_tool(
         "transfer_funds",
-        _ctx(groups=["zava-admins"]),
+        _ctx(groups=["zava-managers"]),
         from_account="ACC-100001",
         to_account="ACC-200001",
         amount=1,
@@ -716,7 +716,7 @@ def test_v11_a2a_forged_handoff_blocked_when_enabled(monkeypatch):
     assert any("A2A BLOCKED" in e for e in res.events)
 
 
-# --- V7: insecure infrastructure — safe vs verbose errors (T8) -------------
+# --- V7: insecure infrastructure - safe vs verbose errors (T8) -------------
 def test_v7_verbose_error_leaks_detail_when_disabled(monkeypatch):
     _reload_with(monkeypatch, ENABLE_SECURE_RUNTIME="false")
     from src.app.main import format_error

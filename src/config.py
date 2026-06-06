@@ -127,7 +127,7 @@ class Settings(BaseSettings):
     pg_app_connection: str = Field(default="", alias="PG_APP_CONNECTION")
     default_customer_id: str = Field(default="CUST-1001", alias="DEFAULT_CUSTOMER_ID")
     default_owner_user_id: str = Field(default="user_1", alias="DEFAULT_OWNER_USER_ID")
-    admin_groups: str = Field(default="zava-admins", alias="ADMIN_GROUPS")
+    admin_groups: str = Field(default="zava-managers", alias="ADMIN_GROUPS")
 
     # --- Entra / Key Vault / Monitor ---------------------------------------
     azure_tenant_id: str = Field(default="", alias="AZURE_TENANT_ID")

@@ -70,7 +70,7 @@ class IdentityInfo(BaseModel):
     token_payload: dict[str, Any] | None = None
 
 
-_ZAVA_GROUPS = {"retail-customers", "private-client", "zava-admins"}
+_ZAVA_GROUPS = {"retail-customers", "private-client", "zava-managers"}
 
 
 def _decode_base64_json(value: str) -> dict[str, Any] | None:
@@ -177,8 +177,8 @@ def _identity_from_request(request: Request, req: ChatRequest | None = None, inc
     zava_groups = sorted(group for group in groups if group in _ZAVA_GROUPS)
     upn = principal_name or ""
     user_id = upn.split("@", 1)[0] if upn else None
-    if "zava-admins" in zava_groups:
-        user_id = user_id or "admin"
+    if "zava-managers" in zava_groups:
+        user_id = user_id or "zava_manager"
     customer_id = _customer_from_user_id(user_id, req.customer_id if req and req.customer_id else settings.default_customer_id)
 
     return IdentityInfo(

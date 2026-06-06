@@ -153,7 +153,14 @@ For instructor-led cohorts, enable `enable_cohort_mode=true`. The default starts
 with `user_1` and `user_2`: each user gets a Foundry project, APIM API path, and
 optional hosted app URL, while AI Search, PostgreSQL, MCP, Key Vault, Monitor,
 and the APIM instance stay shared. Generate the matching Entra/Search/Postgres
-mapping with `python -m src.scripts.setup_lab_users --count 2`.
+mapping with `python -m src.scripts.setup_lab_users --count 2`. To create real
+Zava learner users, a `zava_manager` account, app-role assignments, simple per-user lab passwords, and
+resource-group-scoped Azure Portal access, run `python -m src.scripts.setup_entra_local_auth
+--tenant-domain <tenant>.onmicrosoft.com --resource-group <rg-name> --reset-passwords`.
+The generated users are Zava lab accounts only (`user_1`, `user_2`, ..., plus
+`zava_manager` for elevated Foundry/AI setup); no tenant admin account is created
+or modified. Clean them up after the lab with
+`python -m src.scripts.cleanup_entra_lab_users --tenant-domain <tenant>.onmicrosoft.com --yes`.
 
 ### Make the agents appear in the Foundry portal
 
