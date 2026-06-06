@@ -74,9 +74,9 @@
     .toggle button { padding: 4px 8px; border-radius: 7px; font-size: 11px; background: #263244; color: #d8e3f8; }
     .toggle button.on { background: #14532d; color: #bbf7d0; }
     .toggle button.off { background: #4c1d24; color: #fecdd3; }
-    .toggle-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0 0 10px; }
-    .toggle-actions button { padding: 7px 8px; border-radius: 8px; font-size: 11px; background: #263244; }
-    .toggle-actions button:last-child { grid-column: 1 / -1; background: transparent; border: 1px solid var(--border); color: var(--muted); }
+    .toggle-actions { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+    .toggle-actions button { flex: 1 1 calc(50% - 6px); min-width: 120px; padding: 7px 8px; border-radius: 8px; font-size: 11px; background: #263244; }
+    .toggle-actions button:nth-child(n+3) { flex-basis: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted); }
     .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-left: 8px; }
     .dot.on { background: var(--on); box-shadow: 0 0 6px var(--on); }
     .dot.off { background: var(--off); }
@@ -180,6 +180,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=2026-06-complete-vuln-map"></script>
+  <script src="/static/app.js?v=2026-06-stable-controls"></script>
 </body>
 </html>

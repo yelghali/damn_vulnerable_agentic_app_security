@@ -78,7 +78,7 @@ def _is_admin(ctx: AgentContext) -> bool:
 
 def _server_url() -> str:
     settings = get_settings()
-    if settings.offline_mode:
+    if settings.offline_mode or settings.local_data_mode:
         return _OFFLINE_SERVER
     return settings.pg_mcp_server_url
 

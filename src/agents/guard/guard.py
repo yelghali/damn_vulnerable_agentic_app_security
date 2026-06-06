@@ -29,8 +29,10 @@ with a clear setup error instead of silently using local keyword checks.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import httpx
 
@@ -101,6 +103,7 @@ def _ai_service_headers(key: str | None) -> dict[str, str]:
         headers["Ocp-Apim-Subscription-Key"] = key
         return headers
 
+    _ensure_azure_cli_on_path()
     from azure.identity import DefaultAzureCredential
 
     token = DefaultAzureCredential().get_token(
@@ -108,6 +111,16 @@ def _ai_service_headers(key: str | None) -> dict[str, str]:
     ).token
     headers["Authorization"] = f"Bearer {token}"
     return headers
+
+
+def _ensure_azure_cli_on_path() -> None:
+    """Help DefaultAzureCredential find Azure CLI in local Windows labs."""
+    az_dir = Path(r"C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin")
+    if os.name != "nt" or not (az_dir / "az.cmd").exists():
+        return
+    path_parts = os.environ.get("PATH", "").split(os.pathsep)
+    if str(az_dir) not in path_parts:
+        os.environ["PATH"] = os.pathsep.join([str(az_dir), *path_parts])
 
 
 def _azure_check_content_safety(text: str, creds: tuple[str, str]) -> None:

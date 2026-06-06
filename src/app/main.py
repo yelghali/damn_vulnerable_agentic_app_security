@@ -320,6 +320,98 @@ def reset_gateway(request: Request) -> dict:
     return {"status": "reset", **_config_summary(request)}
 
 
+@app.post("/api/lab/reset-data")
+def reset_lab_data(request: Request) -> dict:
+    if not _runtime_toggles_allowed(request):
+        raise HTTPException(status_code=403, detail="Runtime lab probes are disabled for this host.")
+    settings = get_settings()
+    if not (settings.offline_mode or settings.local_data_mode):
+        raise HTTPException(status_code=400, detail="Lab data reset is only available for local SQLite data.")
+    from src.agents.tools.db import reset_offline_db  # noqa: PLC0415
+
+    reset_offline_db()
+    reset_gateway_budget()
+    return {"status": "reset", "data_backend": "local-sqlite"}
+
+
+@app.post("/api/lab/doc-security-probe", response_model=ChatResponse)
+def doc_security_probe(req: ChatRequest, request: Request) -> ChatResponse:
+    if not _runtime_toggles_allowed(request):
+        raise HTTPException(status_code=403, detail="Runtime lab probes are disabled for this host.")
+    from src.agents.tools.search import SearchConfigurationError, search_documents  # noqa: PLC0415
+
+    identity = _identity_from_request(request, req)
+    groups = identity.zava_groups or identity.groups or req.groups
+    try:
+        docs = search_documents("private client terms", caller_groups=groups, top=3)
+    except SearchConfigurationError as exc:
+        return ChatResponse(
+            answer=f"Document security failed closed: {exc}", agent="knowledge",
+            events=["doc-security: failed closed before returning untrimmed documents"],
+            blocked=True, requires_approval=None, sources=[],
+        )
+    if not docs:
+        return ChatResponse(
+            answer="No documents returned for this caller.", agent="knowledge",
+            events=["doc-security: no accessible documents returned"],
+            blocked=False, requires_approval=None, sources=[],
+        )
+    lines = [f"- {doc['title']}: {doc['content'][:220].strip()}" for doc in docs]
+    return ChatResponse(
+        answer="Document probe returned:\n" + "\n".join(lines), agent="knowledge",
+        events=[f"doc-security: returned {len(docs)} document(s) for groups {groups or ['none']}"],
+        blocked=False, requires_approval=None,
+        sources=[{"id": doc.get("id"), "title": doc.get("title")} for doc in docs],
+    )
+
+
+@app.post("/api/lab/rag-injection-probe", response_model=ChatResponse)
+def rag_injection_probe(req: ChatRequest, request: Request) -> ChatResponse:
+    if not _runtime_toggles_allowed(request):
+        raise HTTPException(status_code=403, detail="Runtime lab probes are disabled for this host.")
+    from src.agents.guard.guard import SafetyViolation, shield_prompt  # noqa: PLC0415
+    from src.agents.tools.search import SearchConfigurationError, search_documents  # noqa: PLC0415
+
+    identity = _identity_from_request(request, req)
+    groups = identity.zava_groups or identity.groups or req.groups
+    try:
+        docs = search_documents("current savings rates", caller_groups=groups, top=3)
+    except SearchConfigurationError as exc:
+        return ChatResponse(
+            answer=f"RAG retrieval failed closed: {exc}", agent="knowledge",
+            events=["rag-injection: failed closed before returning untrusted documents"],
+            blocked=True, requires_approval=None, sources=[],
+        )
+    safe_docs: list[dict[str, Any]] = []
+    events = [f"rag-injection: retrieved {len(docs)} document(s)"]
+    blocked_docs: list[str] = []
+    for doc in docs:
+        try:
+            shield_prompt(doc["content"], source="document")
+            safe_docs.append(doc)
+        except SafetyViolation as exc:
+            blocked_docs.append(doc["id"])
+            events.append(f"prompt-shield BLOCKED document '{doc['id']}' ({exc.category})")
+        except Exception:  # noqa: BLE001 - secure guardrail failures fail closed for the lab
+            return ChatResponse(
+                answer="RAG Prompt Shields failed closed because Azure guardrail configuration is unavailable.",
+                agent="knowledge",
+                events=["rag-injection: Prompt Shields unavailable; failed closed"],
+                blocked=True, requires_approval=None, sources=[],
+            )
+    visible_docs = safe_docs if blocked_docs else docs
+    lines = [f"- {doc['title']}: {doc['content'][:220].strip()}" for doc in visible_docs]
+    if blocked_docs:
+        answer = f"Blocked poisoned document(s): {', '.join(blocked_docs)}. Safe documents returned:\n" + "\n".join(lines)
+    else:
+        answer = "RAG probe returned untrusted document content:\n" + "\n".join(lines)
+    return ChatResponse(
+        answer=answer, agent="knowledge", events=events,
+        blocked=bool(blocked_docs), requires_approval=None,
+        sources=[{"id": doc.get("id"), "title": doc.get("title")} for doc in visible_docs],
+    )
+
+
 @app.post("/api/lab/mcp-transfer-probe", response_model=ChatResponse)
 def mcp_transfer_probe(request: Request) -> ChatResponse:
     if not _runtime_toggles_allowed(request):
