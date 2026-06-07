@@ -46,6 +46,104 @@ resource "azurerm_api_management_logger" "appi" {
   }
 }
 
+resource "azurerm_monitor_diagnostic_setting" "apim_logs" {
+  count                      = var.deploy_apim ? 1 : 0
+  name                       = "diag-${local.base}-apim"
+  target_resource_id         = azurerm_api_management.gw[0].id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
+
+  enabled_log {
+    category = "GatewayLogs"
+  }
+
+  enabled_log {
+    category = "GatewayLlmLogs"
+  }
+
+  enabled_log {
+    category = "GatewayMCPLogs"
+  }
+
+  enabled_log {
+    category = "WebSocketConnectionLogs"
+  }
+
+  enabled_log {
+    category = "DeveloperPortalAuditLogs"
+  }
+
+  metric {
+    category = "AllMetrics"
+    enabled  = true
+  }
+}
+
+resource "azurerm_api_management_api_diagnostic" "aoai_appi" {
+  count                     = var.deploy_apim ? 1 : 0
+  identifier                = "applicationinsights"
+  resource_group_name       = azurerm_resource_group.rg.name
+  api_management_name       = azurerm_api_management.gw[0].name
+  api_name                  = azurerm_api_management_api.aoai[0].name
+  api_management_logger_id  = azurerm_api_management_logger.appi[0].id
+  sampling_percentage       = 100
+  always_log_errors         = true
+  verbosity                 = "information"
+  http_correlation_protocol = "W3C"
+
+  frontend_request {
+    body_bytes     = 4096
+    headers_to_log = ["x-zava-lab-user", "x-ms-client-principal-id"]
+  }
+
+  frontend_response {
+    body_bytes     = 4096
+    headers_to_log = ["apim-request-id"]
+  }
+
+  backend_request {
+    body_bytes     = 4096
+    headers_to_log = ["x-zava-lab-user"]
+  }
+
+  backend_response {
+    body_bytes     = 4096
+    headers_to_log = ["apim-request-id"]
+  }
+}
+
+resource "azurerm_api_management_api_diagnostic" "cohort_aoai_appi" {
+  for_each                  = var.deploy_apim ? local.cohort_user_map : {}
+  identifier                = "applicationinsights"
+  resource_group_name       = azurerm_resource_group.rg.name
+  api_management_name       = azurerm_api_management.gw[0].name
+  api_name                  = azurerm_api_management_api.cohort_aoai[each.key].name
+  api_management_logger_id  = azurerm_api_management_logger.appi[0].id
+  sampling_percentage       = 100
+  always_log_errors         = true
+  verbosity                 = "information"
+  http_correlation_protocol = "W3C"
+
+  frontend_request {
+    body_bytes     = 4096
+    headers_to_log = ["x-zava-lab-user", "x-ms-client-principal-id"]
+  }
+
+  frontend_response {
+    body_bytes     = 4096
+    headers_to_log = ["apim-request-id"]
+  }
+
+  backend_request {
+    body_bytes     = 4096
+    headers_to_log = ["x-zava-lab-user"]
+  }
+
+  backend_response {
+    body_bytes     = 4096
+    headers_to_log = ["apim-request-id"]
+  }
+}
+
 resource "azurerm_api_management_named_value" "foundry_key" {
   count               = var.deploy_apim ? 1 : 0
   name                = "foundry-openai-key"

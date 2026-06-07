@@ -142,6 +142,37 @@ def search_documents(
     ]
 
 
+def list_knowledge_documents(caller_groups: list[str] | None = None, top: int = 200) -> list[dict[str, Any]]:
+    """List the knowledge corpus for the V5 document-security lab probe.
+
+    Vulnerable mode deliberately returns every document. Secure mode requires
+    Azure AI Search and applies the same server-side ``group_ids`` trimming as
+    normal RAG queries.
+    """
+    settings = get_settings()
+    use_local_corpus = settings.local_data_mode and not settings.enable_doc_security
+    if settings.search_endpoint and not use_local_corpus:
+        try:
+            return _azure_list_documents(caller_groups, top, settings)
+        except Exception as exc:  # noqa: BLE001 - Azure failure must not leak untrimmed docs
+            raise SearchConfigurationError(f"Azure AI Search failed closed: {exc}") from exc
+
+    if settings.enable_doc_security:
+        raise SearchConfigurationError(
+            "Document security is enabled but SEARCH_ENDPOINT is not configured."
+        )
+
+    return [
+        {
+            "id": doc["id"],
+            "title": doc["title"],
+            "content": doc["content"],
+            "group_ids": doc.get("group_ids", []),
+        }
+        for doc in _load_offline_docs()[:top]
+    ]
+
+
 def _azure_search(
     query: str, caller_groups: list[str] | None, top: int, settings: Any
 ) -> list[dict[str, Any]]:
@@ -176,5 +207,38 @@ def _azure_search(
     )
     return [
         {"id": r.get("id"), "title": r.get("title"), "content": r.get("content")}
+        for r in results
+    ]
+
+
+def _azure_list_documents(caller_groups: list[str] | None, top: int, settings: Any) -> list[dict[str, Any]]:
+    """List docs from Azure AI Search with optional document-level security."""
+    from azure.core.credentials import AzureKeyCredential
+    from azure.identity import DefaultAzureCredential
+    from azure.search.documents import SearchClient
+
+    credential = AzureKeyCredential(settings.search_key) if settings.search_key else DefaultAzureCredential()
+    client = SearchClient(
+        endpoint=settings.search_endpoint,
+        index_name=settings.search_index_name,
+        credential=credential,
+    )
+    search_filter: str | None = None
+    if settings.enable_doc_security and not _is_admin(caller_groups):
+        groups = ",".join(g.replace("'", "").replace(",", "") for g in (caller_groups or []))
+        search_filter = f"not group_ids/any() or group_ids/any(g: search.in(g, '{groups}', ','))"
+    results = client.search(
+        search_text="*",
+        filter=search_filter,
+        top=top,
+        select=["id", "title", "content", "group_ids"],
+    )
+    return [
+        {
+            "id": r.get("id"),
+            "title": r.get("title"),
+            "content": r.get("content"),
+            "group_ids": list(r.get("group_ids") or []),
+        }
         for r in results
     ]

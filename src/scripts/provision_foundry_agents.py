@@ -55,6 +55,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from src.cohort_seed import cohort_knowledge_documents
 from src.config import get_settings
 
 logger = logging.getLogger("zava.provision")
@@ -169,6 +170,7 @@ def ensure_search_index(settings: Any) -> None:
     logger.info("AI Search: index '%s' ready", index_name)
 
     docs = _load_docs()
+    docs.extend(cohort_knowledge_documents(settings.cohort_user_count, settings.cohort_user_prefix))
     if not docs:
         logger.warning("AI Search: no documents found in %s", _DOCS_DIR)
         return

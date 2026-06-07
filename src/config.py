@@ -159,6 +159,8 @@ class Settings(BaseSettings):
     default_customer_id: str = Field(default="CUST-1001", alias="DEFAULT_CUSTOMER_ID")
     default_owner_user_id: str = Field(default="user_1", alias="DEFAULT_OWNER_USER_ID")
     admin_groups: str = Field(default="zava-managers", alias="ADMIN_GROUPS")
+    cohort_user_count: int = Field(default=2, alias="COHORT_USER_COUNT")
+    cohort_user_prefix: str = Field(default="user", alias="COHORT_USER_PREFIX")
 
     # --- Entra / Key Vault / Monitor ---------------------------------------
     azure_tenant_id: str = Field(default="", alias="AZURE_TENANT_ID")
@@ -220,6 +222,8 @@ class Settings(BaseSettings):
             "model_backend": "foundry-local/openai-compatible" if self.offline_mode else "azure-ai-foundry",
             "model_label": model_label,
             "data_backend": data_backend,
+            "cohort_user_count": self.cohort_user_count,
+            "cohort_user_prefix": self.cohort_user_prefix,
             "ai_gateway_token_limit": self.ai_gateway_token_limit,
             "vulnerable_app_url": self.vulnerable_app_url,
             "secure_app_url": self.secure_app_url,

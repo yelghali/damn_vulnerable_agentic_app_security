@@ -21,3 +21,30 @@ resource "azurerm_application_insights" "appi" {
   application_type    = "web"
   tags                = local.tags
 }
+
+# Container Apps already streams console logs to the workspace through the
+# managed environment. Diagnostic settings make platform logs/metrics explicit
+# for Module 6 and keep ACA observability beside APIM/model traces.
+resource "azurerm_monitor_diagnostic_setting" "aca_environment" {
+  count                      = local.deploy_container_apps ? 1 : 0
+  name                       = "diag-${local.base}-aca"
+  target_resource_id         = azurerm_container_app_environment.mcp[0].id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.logs.id
+
+  enabled_log {
+    category = "ContainerAppConsoleLogs"
+  }
+
+  enabled_log {
+    category = "ContainerAppSystemLogs"
+  }
+
+  enabled_log {
+    category = "ContainerAppHTTPLogs"
+  }
+
+  metric {
+    category = "AllMetrics"
+    enabled  = true
+  }
+}

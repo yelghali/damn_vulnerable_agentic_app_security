@@ -19,6 +19,7 @@ azure-ai-contentsafety>=1.0.0            # Content Safety + Prompt Shields (V1/V
 azure-ai-textanalytics>=5.3.0            # Azure AI Language PII detection/redaction (V3)
 azure-search-documents>=11.6.0           # RAG + document-level security trimming (V5/V6)
 azure-keyvault-secrets>=4.8.0            # Key Vault secret access (V5)
+azure-monitor-opentelemetry>=1.6.0       # App Insights logs/traces for app + agents (V7/V10)
 
 # --- Assurance (Extended track) ---
 azure-ai-evaluation>=1.0.0               # Evaluations + AI Red Teaming Agent (M9/M10)

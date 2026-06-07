@@ -30,10 +30,12 @@ from pydantic import BaseModel, Field
 from src.agents.gateway import GatewayError, reset_gateway_budget, route_call
 from src.agents.model import ModelSafetyBlocked
 from src.agents.orchestrator.orchestrator import handle_turn
+from src.agents.telemetry import configure_telemetry
 from src.agents.types import AgentContext
 from src.config import AGENT_GOVERNANCE_CONTROL_KEYS, SECURITY_CONTROLS, get_settings
 
 logging.basicConfig(level=logging.INFO)
+configure_telemetry()
 
 app = FastAPI(title="Zava Wealth Advisor (Damn Vulnerable Agentic App)")
 _STATIC = Path(__file__).resolve().parent / "static"
@@ -103,6 +105,13 @@ class IdentityInfo(BaseModel):
     access: dict[str, Any] = Field(default_factory=dict)
 
 
+_KNOWLEDGE_DOCS_PROMPTS = {
+    "show me all knowledge docs",
+    "show all knowledge docs",
+    "list all knowledge docs",
+    "show me all documents",
+    "list all documents",
+}
 _ZAVA_GROUPS = {"retail-customers", "private-client", "zava-managers"}
 _LEGACY_ZAVA_GROUPS = {"zava-admins": "zava-managers"}
 
@@ -351,6 +360,62 @@ def _config_summary(request: Request) -> dict:
     return summary
 
 
+def _is_knowledge_docs_prompt(message: str) -> bool:
+    normalized = " ".join(message.lower().strip().rstrip("?.!").split())
+    return normalized in _KNOWLEDGE_DOCS_PROMPTS
+
+
+def _knowledge_docs_response(req: ChatRequest, request: Request) -> ChatResponse:
+    from src.agents.tools.search import SearchConfigurationError, list_knowledge_documents  # noqa: PLC0415
+
+    settings = get_settings()
+    identity = _identity_from_request(request, req)
+    if settings.enable_obo and not identity.authenticated:
+        return ChatResponse(
+            answer="Authentication required: secure identity/OBO mode needs a validated Entra login.",
+            agent="knowledge",
+            events=["identity: missing validated Entra principal"],
+            blocked=True,
+            requires_approval=None,
+            sources=[],
+        )
+    groups = identity.zava_groups or identity.groups or req.groups
+    try:
+        docs = list_knowledge_documents(caller_groups=groups, top=200)
+    except SearchConfigurationError as exc:
+        return ChatResponse(
+            answer=(
+                "Document security failed closed. Azure AI Search document-level security "
+                "is enabled, but the secure Search endpoint is not configured for this host. "
+                "No untrimmed knowledge docs were returned."
+            ),
+            agent="knowledge",
+            events=[f"knowledge-docs: failed closed before listing untrimmed documents ({exc})"],
+            blocked=True, requires_approval=None, sources=[],
+        )
+
+    lines = []
+    for doc in docs:
+        acl = ", ".join(doc.get("group_ids") or []) or "public"
+        snippet = str(doc.get("content") or "").replace("\n", " ")[:180].strip()
+        lines.append(f"- {doc.get('title') or doc.get('id')} [{acl}]: {snippet}")
+    mode = "secure AI Search document-level security" if settings.enable_doc_security else "vulnerable no document-level security"
+    return ChatResponse(
+        answer=f"Knowledge docs visible through {mode}:\n" + "\n".join(lines),
+        agent="knowledge",
+        events=[
+            f"knowledge-docs: returned {len(docs)} document(s) for groups {groups or ['none']}",
+            f"knowledge-docs: {mode}",
+        ],
+        blocked=False,
+        requires_approval=None,
+        sources=[
+            {"id": doc.get("id"), "title": doc.get("title"), "group_ids": doc.get("group_ids", [])}
+            for doc in docs
+        ],
+    )
+
+
 @app.post("/api/config/toggles")
 def update_toggles(req: ToggleRequest, request: Request) -> dict:
     if not _runtime_toggles_allowed(request):
@@ -435,6 +500,13 @@ def doc_security_probe(req: ChatRequest, request: Request) -> ChatResponse:
         blocked=False, requires_approval=None,
         sources=[{"id": doc.get("id"), "title": doc.get("title")} for doc in docs],
     )
+
+
+@app.post("/api/lab/knowledge-docs-probe", response_model=ChatResponse)
+def knowledge_docs_probe(req: ChatRequest, request: Request) -> ChatResponse:
+    if not _runtime_toggles_allowed(request):
+        raise HTTPException(status_code=403, detail="Runtime lab probes are disabled for this host.")
+    return _knowledge_docs_response(req, request)
 
 
 @app.post("/api/lab/rag-injection-probe", response_model=ChatResponse)
@@ -661,6 +733,8 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
             agent="orchestrator", events=["identity: missing validated Entra principal"],
             blocked=True, requires_approval=None, sources=[],
         )
+    if _is_knowledge_docs_prompt(req.message):
+        return _knowledge_docs_response(req, request)
     customer_id = identity.customer_id if settings.enable_obo else (req.customer_id or settings.default_customer_id)
     groups = identity.zava_groups or identity.groups if settings.enable_obo else req.groups
     ctx = AgentContext(

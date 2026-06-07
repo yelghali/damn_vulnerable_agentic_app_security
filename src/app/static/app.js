@@ -92,8 +92,11 @@ const EXPLOITS = [
     note: "Client-spoofed customer context vs Entra-authenticated identity",
     detail: "Temporarily spoofs the customer field to another user. Entra/OBO should replace editable client context with authenticated identity." },
   { tag: "V5·docs", text: "__v5_doc_probe__",
-    note: "Private-client document exposure vs AI Search document security",
-    detail: "Runs a Search boundary probe for private-client terms. Document security should trim by caller groups or fail closed." },
+    note: "Show my private client terms",
+    detail: "Runs the prompt 'Show my private client terms' through the Search boundary. Document security should trim by caller groups or fail closed." },
+  { tag: "V5·all docs", text: "__knowledge_docs_probe__",
+    note: "Show me all knowledge docs",
+    detail: "Lists the knowledge corpus. With doc security off it returns every doc; with AI Search document security on it returns only docs allowed by the caller's groups." },
   // Secure runtime / safe errors (V7)
   { tag: "V7", text: "__lab_v7_error__",
     note: "Verbose internal error leak vs safe runtime error",
@@ -277,13 +280,13 @@ async function runV5AuthProbe() {
 }
 
 async function runV5DocProbe() {
-  addMsg("V5 document-security probe: private client terms", "user");
+  addMsg("Show my private client terms", "user");
   try {
     const res = await fetch("/api/lab/doc-security-probe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        message: "private client terms",
+        message: "show my private client terms",
         customer_id: $("customer").value.trim(),
         groups: groupList(),
       }),
@@ -295,6 +298,10 @@ async function runV5DocProbe() {
   } catch (err) {
     addMsg("Could not run document-security probe: " + err, "bot", true);
   }
+}
+
+async function runKnowledgeDocsProbe() {
+  await send("Show me all knowledge docs");
 }
 
 async function runV6RagProbe() {
@@ -549,6 +556,7 @@ function renderChips() {
       if (c.text === "__gateway_burst__") runGatewayBurst();
       else if (c.text === "__v5_auth_probe__") runV5AuthProbe();
       else if (c.text === "__v5_doc_probe__") runV5DocProbe();
+      else if (c.text === "__knowledge_docs_probe__") runKnowledgeDocsProbe();
       else if (c.text === "__v6_rag_probe__") runV6RagProbe();
       else if (c.text === "__mcp_transfer_probe__") runMcpTransferProbe();
       else send(promptText(c.text));

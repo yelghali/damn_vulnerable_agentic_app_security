@@ -252,6 +252,18 @@ resource "azurerm_container_app" "zava_app" {
         value = "zava-financial-docs"
       }
       env {
+        name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+        value = azurerm_application_insights.appi.connection_string
+      }
+      env {
+        name  = "APPLICATIONINSIGHTS_ROLE_NAME"
+        value = "zava-app"
+      }
+      env {
+        name  = "OTEL_RESOURCE_ATTRIBUTES"
+        value = "service.name=zava-wealth-advisor,service.namespace=zava-lab,service.instance.id=${local.base}"
+      }
+      env {
         name  = "PG_MCP_SERVER_URL"
         value = var.deploy_mcp_toolbox ? "https://${azurerm_container_app.mcp_toolbox[0].ingress[0].fqdn}/mcp" : ""
       }
@@ -411,6 +423,18 @@ resource "azurerm_container_app" "zava_user_app" {
       env {
         name  = "SEARCH_INDEX_NAME"
         value = "zava-financial-docs"
+      }
+      env {
+        name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+        value = azurerm_application_insights.appi.connection_string
+      }
+      env {
+        name  = "APPLICATIONINSIGHTS_ROLE_NAME"
+        value = "zava-app-${each.value.safe_id}"
+      }
+      env {
+        name  = "OTEL_RESOURCE_ATTRIBUTES"
+        value = "service.name=zava-wealth-advisor,service.namespace=zava-lab,service.instance.id=${local.base}-${each.value.safe_id},zava.lab_user=${each.key}"
       }
       env {
         name  = "PG_MCP_SERVER_URL"

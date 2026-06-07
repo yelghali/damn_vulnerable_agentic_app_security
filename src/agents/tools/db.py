@@ -24,6 +24,7 @@ import threading
 from pathlib import Path
 from typing import Any, Iterable
 
+from src.cohort_seed import cohort_financial_seed_sql
 from src.config import get_settings
 
 _DATA_DIR = Path(__file__).resolve().parents[2] / "data"
@@ -46,6 +47,10 @@ def _offline_conn() -> sqlite3.Connection:
         conn.row_factory = sqlite3.Row
         if first_time and _OFFLINE_SEED.exists():
             conn.executescript(_OFFLINE_SEED.read_text(encoding="utf-8"))
+            settings = get_settings()
+            extra_seed = cohort_financial_seed_sql(settings.cohort_user_count, settings.cohort_user_prefix)
+            if extra_seed:
+                conn.executescript(extra_seed)
             conn.commit()
     return conn
 
@@ -75,12 +80,24 @@ def _postgres_conn(*, admin: bool = False):
     return psycopg.connect(conninfo, row_factory=dict_row)
 
 
-def reset_offline_db() -> None:
+def reset_offline_db(cohort_count: int | None = None, cohort_prefix: str | None = None) -> None:
     """Drop and reseed the local SQLite DB (used by tests/scripts)."""
+    settings = get_settings()
     with _lock:
         if _OFFLINE_DB.exists():
             _OFFLINE_DB.unlink()
-    _offline_conn().close()
+        conn = sqlite3.connect(_OFFLINE_DB, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        if _OFFLINE_SEED.exists():
+            conn.executescript(_OFFLINE_SEED.read_text(encoding="utf-8"))
+            extra_seed = cohort_financial_seed_sql(
+                cohort_count if cohort_count is not None else settings.cohort_user_count,
+                cohort_prefix if cohort_prefix is not None else settings.cohort_user_prefix,
+            )
+            if extra_seed:
+                conn.executescript(extra_seed)
+            conn.commit()
+        conn.close()
 
 
 def _conn(*, admin: bool = False):

@@ -14,17 +14,19 @@ Run with: ``python -m src.scripts.seed``
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from src.agents.tools import db
+from src.cohort_seed import cohort_financial_seed_sql
 from src.config import get_settings
 
 _ROOT = Path(__file__).resolve().parents[1]
 _OFFLINE_SEED = _ROOT / "data" / "seed_offline.sql"
 
 
-def _postgres_seed_sql() -> str:
+def _postgres_seed_sql(cohort_count: int, cohort_prefix: str) -> str:
     sql = _OFFLINE_SEED.read_text(encoding="utf-8")
     sql = sql.replace(
         "CREATE TABLE customers",
@@ -35,6 +37,9 @@ def _postgres_seed_sql() -> str:
         "CREATE TABLE customers",
     )
     sql = sql.replace("REAL NOT NULL", "NUMERIC(12,2) NOT NULL")
+    extra_seed = cohort_financial_seed_sql(cohort_count, cohort_prefix)
+    if extra_seed:
+        sql = sql.rstrip() + "\n\n" + extra_seed + "\n"
     return sql
 
 
@@ -47,9 +52,12 @@ def _app_role_from_conninfo(conninfo: str) -> tuple[str, str | None]:
     return user, password
 
 
-def seed_offline() -> None:
+def seed_offline(cohort_count: int | None = None, cohort_prefix: str | None = None) -> None:
     """Drop and reseed the local SQLite store, then report row counts."""
-    db.reset_offline_db()
+    settings = get_settings()
+    cohort_count = cohort_count if cohort_count is not None else settings.cohort_user_count
+    cohort_prefix = cohort_prefix if cohort_prefix is not None else settings.cohort_user_prefix
+    db.reset_offline_db(cohort_count=cohort_count, cohort_prefix=cohort_prefix)
     conn = db._offline_conn()  # noqa: SLF001 - internal helper reuse for the script
     try:
         tables = ("accounts", "transactions", "credit_scores")
@@ -58,10 +66,10 @@ def seed_offline() -> None:
             print(f"  seeded {table:<14} {count} row(s)")
     finally:
         conn.close()
-    print("Offline SQLite store reseeded.")
+    print(f"Offline SQLite store reseeded for {cohort_count} cohort user(s).")
 
 
-def seed_azure() -> None:
+def seed_azure(cohort_count: int | None = None, cohort_prefix: str | None = None) -> None:
     """Seed PostgreSQL + upload/index sample docs (Azure mode).
 
     Uses ``PG_ADMIN_CONNECTION`` for schema/data creation. If AI Search is
@@ -69,6 +77,8 @@ def seed_azure() -> None:
     documents used by the Knowledge agent.
     """
     settings = get_settings()
+    cohort_count = cohort_count if cohort_count is not None else settings.cohort_user_count
+    cohort_prefix = cohort_prefix if cohort_prefix is not None else settings.cohort_user_prefix
     if not settings.pg_admin_connection:
         raise SystemExit("PG_ADMIN_CONNECTION is required when OFFLINE_MODE=false.")
     try:
@@ -80,7 +90,7 @@ def seed_azure() -> None:
 
     app_role, app_password = _app_role_from_conninfo(settings.pg_app_connection)
     with psycopg.connect(settings.pg_admin_connection) as conn:
-        conn.execute(_postgres_seed_sql())
+        conn.execute(_postgres_seed_sql(cohort_count, cohort_prefix))
         role_ident = sql.Identifier(app_role)
         if app_password:
             conn.execute(
@@ -155,7 +165,8 @@ def seed_azure() -> None:
             count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             print(f"  seeded {table:<14} {count} row(s)")
     print(
-        f"Azure PostgreSQL store reseeded; least-privilege role '{app_role}' granted SELECT "
+        f"Azure PostgreSQL store reseeded for {cohort_count} cohort user(s); "
+        f"least-privilege role '{app_role}' granted SELECT "
         "with owner_user_id row-level security policies."
     )
 
@@ -168,14 +179,35 @@ def seed_azure() -> None:
         print("SEARCH_ENDPOINT not set; skipped AI Search document indexing.")
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Seed Zava lab data for local or Azure mode.")
+    parser.add_argument(
+        "--cohort-count",
+        type=int,
+        default=None,
+        help="Number of generated cohort users to seed. Defaults to COHORT_USER_COUNT or 2.",
+    )
+    parser.add_argument(
+        "--cohort-prefix",
+        default=None,
+        help="Generated user prefix. Defaults to COHORT_USER_PREFIX or user.",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     settings = get_settings()
+    cohort_count = args.cohort_count if args.cohort_count is not None else settings.cohort_user_count
+    cohort_prefix = args.cohort_prefix or settings.cohort_user_prefix
+    if cohort_count < 1 or cohort_count > 100:
+        raise SystemExit("--cohort-count must be between 1 and 100.")
     if settings.offline_mode:
         print("Seeding in OFFLINE mode (local SQLite)...")
-        seed_offline()
+        seed_offline(cohort_count, cohort_prefix)
     else:
         print("Seeding in AZURE mode (PostgreSQL + AI Search)...")
-        seed_azure()
+        seed_azure(cohort_count, cohort_prefix)
 
 
 if __name__ == "__main__":

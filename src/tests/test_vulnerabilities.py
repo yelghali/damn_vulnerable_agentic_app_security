@@ -33,6 +33,7 @@ def _reload_with(monkeypatch: pytest.MonkeyPatch, **env: str):
         "LOCAL_DATA_MODE",
         "USE_MCP_TOOLS", "PG_MCP_SERVER_URL", "MCP_TOOL_ALLOWLIST",
         "AI_GATEWAY_TOKEN_LIMIT",
+        "COHORT_USER_COUNT", "COHORT_USER_PREFIX",
         "CONTENT_SAFETY_ENDPOINT", "CONTENT_SAFETY_KEY", "LANGUAGE_ENDPOINT",
         "LANGUAGE_KEY", "SEARCH_ENDPOINT", "SEARCH_KEY",
         "CONTENT_SAFETY_SEVERITY_THRESHOLD", "CONTENT_SAFETY_BLOCK_OFF_TOPIC",
@@ -155,9 +156,22 @@ def _install_fake_azure_services(monkeypatch: pytest.MonkeyPatch, guard, search)
                 results = [doc for doc in results if not doc["group_ids"] or groups.intersection(doc["group_ids"])]
         return [{"id": doc["id"], "title": doc["title"], "content": doc["content"]} for doc in results]
 
+    def fake_azure_list_documents(caller_groups: list[str] | None, top: int, settings) -> list[dict[str, str]]:
+        docs = search._load_offline_docs()
+        if settings.enable_doc_security:
+            groups = set(caller_groups or [])
+            admin_groups = {g.strip() for g in settings.admin_groups.split(",") if g.strip()}
+            if not admin_groups.intersection(groups):
+                docs = [doc for doc in docs if not doc["group_ids"] or groups.intersection(doc["group_ids"])]
+        return [
+            {"id": doc["id"], "title": doc["title"], "content": doc["content"], "group_ids": doc["group_ids"]}
+            for doc in docs[:top]
+        ]
+
     monkeypatch.setattr(guard.httpx, "post", fake_content_safety_post)
     monkeypatch.setattr(guard, "_azure_redact_pii", fake_redact_pii)
     monkeypatch.setattr(search, "_azure_search", fake_azure_search)
+    monkeypatch.setattr(search, "_azure_list_documents", fake_azure_list_documents)
 
 
 def _ctx(customer_id: str = "CUST-1001", groups: list[str] | None = None):
@@ -573,6 +587,22 @@ def test_local_data_mode_uses_sqlite_when_model_is_remote(monkeypatch):
     assert score["bureau"] == "Equifax"
 
 
+def test_cohort_seed_scales_sqlite_customer_rows(monkeypatch):
+    _, db, _ = _reload_with(
+        monkeypatch,
+        COHORT_USER_COUNT="5",
+        ENABLE_TOOL_LEAST_PRIV="true",
+    )
+
+    rows = db.get_accounts("CUST-1005", caller_id="CUST-1005")
+    score = db.get_credit_score("CUST-1005", caller_id="CUST-1005")
+    manager_rows = db.get_accounts("*", caller_id="*", caller_groups=["zava-managers"])
+
+    assert {row["account_id"] for row in rows} == {"ACC-500001", "ACC-500002"}
+    assert score["customer_id"] == "CUST-1005"
+    assert len(manager_rows) == 10
+
+
 # --- V4: SQL injection through the accounts agent --------------------------
 def test_v4_sqli_dumps_all_when_disabled(monkeypatch):
     _reload_with(monkeypatch, ENABLE_TOOL_LEAST_PRIV="false")
@@ -751,6 +781,115 @@ def test_v5_doc_security_probe_exposes_then_fails_closed(monkeypatch):
     assert "Private Client" in vulnerable["answer"]
     assert secure["blocked"] is True
     assert "failed closed" in secure["answer"]
+
+
+def test_v5_knowledge_docs_probe_exposes_then_trims(monkeypatch):
+    _reload_with(
+        monkeypatch,
+        ENABLE_DOC_SECURITY="false",
+        SEARCH_ENDPOINT="https://search.test",
+        SEARCH_KEY="test-key",
+    )
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    client = TestClient(app)
+    vulnerable = client.post(
+        "/api/lab/knowledge-docs-probe",
+        json={"message": "show me all knowledge docs", "groups": ["retail-customers"]},
+    ).json()
+    client.post("/api/config/toggles", json={"controls": {"doc_security": True}})
+    secure = client.post(
+        "/api/lab/knowledge-docs-probe",
+        json={"message": "show me all knowledge docs", "groups": ["retail-customers"]},
+    ).json()
+
+    assert vulnerable["blocked"] is False
+    assert "Private Client" in vulnerable["answer"]
+    assert "Wire Transfer Policy" in vulnerable["answer"]
+    assert secure["blocked"] is False
+    assert "Private Client" not in secure["answer"]
+    assert "Wire Transfer Policy" in secure["answer"]
+    assert any("secure AI Search" in event for event in secure["events"])
+
+
+def test_v5_knowledge_docs_chat_prompt_exposes_all_when_insecure(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_OBO="false", ENABLE_DOC_SECURITY="false")
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={"message": "Show me all knowledge docs", "groups": ["retail-customers"]},
+    ).json()
+
+    assert response["blocked"] is False
+    assert response["agent"] == "knowledge"
+    assert "Knowledge docs visible through vulnerable no document-level security" in response["answer"]
+    assert "Private Client" in response["answer"]
+    assert "Wire Transfer Policy" in response["answer"]
+
+
+def test_v5_knowledge_docs_chat_prompt_requires_auth_when_obo_enabled(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_OBO="true", ENABLE_DOC_SECURITY="false")
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={"message": "Show me all knowledge docs", "groups": ["retail-customers"]},
+    ).json()
+
+    assert response["blocked"] is True
+    assert response["agent"] == "orchestrator"
+    assert "Authentication required" in response["answer"]
+
+
+def test_v5_knowledge_docs_probe_requires_auth_when_obo_enabled(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_OBO="true", ENABLE_DOC_SECURITY="false")
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/lab/knowledge-docs-probe",
+        json={"message": "show me all knowledge docs", "groups": ["retail-customers"]},
+    ).json()
+
+    assert response["blocked"] is True
+    assert response["agent"] == "knowledge"
+    assert "Authentication required" in response["answer"]
+
+
+def test_v5_knowledge_docs_probe_uses_signed_in_groups_when_secure(monkeypatch):
+    _reload_with(
+        monkeypatch,
+        ENABLE_OBO="true",
+        ENABLE_DOC_SECURITY="true",
+        SEARCH_ENDPOINT="https://search.test",
+        SEARCH_KEY="test-key",
+    )
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    principal = {
+        "userDetails": "user_1@example.onmicrosoft.com",
+        "userId": "00000000-0000-0000-0000-000000000001",
+        "claims": [{"typ": "roles", "val": "retail-customers"}],
+    }
+    client = TestClient(app)
+    response = client.post(
+        "/api/lab/knowledge-docs-probe",
+        headers={"x-ms-client-principal": _b64_json(principal)},
+        json={"message": "show me all knowledge docs", "groups": ["private-client"]},
+    ).json()
+
+    assert response["blocked"] is False
+    assert "Private Client" not in response["answer"]
+    assert "Wire Transfer Policy" in response["answer"]
+    assert any("retail-customers" in event for event in response["events"])
 
 
 # --- V6: indirect prompt injection in a poisoned doc -----------------------

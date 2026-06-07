@@ -29,6 +29,7 @@ from src.agents.knowledge import agent as knowledge_agent
 from src.agents.model import compose_answer
 from src.agents.prompts import load_system_prompt
 from src.agents.reporting import agent as reporting_agent
+from src.agents.telemetry import agent_span, record_agent_result
 from src.agents.transactions import agent as transactions_agent
 from src.agents.types import AgentContext, TurnResult
 
@@ -83,7 +84,9 @@ def _deliver_handoff(result: TurnResult, ctx: AgentContext) -> TurnResult:
 
     # Guard passed (or is off): dispatch to the named agent.
     if to_agent == "transactions":
-        sub = transactions_agent.run(payload, ctx)
+        with agent_span("transactions", payload, ctx) as span:
+            sub = transactions_agent.run(payload, ctx)
+            record_agent_result(span, "transactions", sub)
         result.events.append(f"A2A: {result.agent} -> transactions handoff executed")
         result.events += [f"  {e}" for e in sub.events]
         result.answer += f"\n\n[handoff → transactions]: {sub.answer}"
@@ -96,6 +99,13 @@ def _deliver_handoff(result: TurnResult, ctx: AgentContext) -> TurnResult:
 
 
 def handle_turn(message: str, ctx: AgentContext) -> TurnResult:
+    with agent_span("orchestrator", message, ctx) as orchestrator_span:
+        result = _handle_turn(message, ctx)
+        record_agent_result(orchestrator_span, "orchestrator", result)
+        return result
+
+
+def _handle_turn(message: str, ctx: AgentContext) -> TurnResult:
     events: list[str] = []
 
     # 1. INPUT guards -------------------------------------------------------
@@ -116,18 +126,28 @@ def handle_turn(message: str, ctx: AgentContext) -> TurnResult:
     route = _route(message)
     events.append(f"orchestrator: routed to '{route}' agent")
     if route == "orchestrator":
-        result = TurnResult(
-            answer=compose_answer(load_system_prompt(), message),
-            agent="orchestrator",
-        )
+        with agent_span("orchestrator.model", message, ctx) as span:
+            result = TurnResult(
+                answer=compose_answer(load_system_prompt(), message),
+                agent="orchestrator",
+            )
+            record_agent_result(span, "orchestrator.model", result)
     elif route == "accounts":
-        result = accounts_agent.run(message, ctx)
+        with agent_span("accounts", message, ctx) as span:
+            result = accounts_agent.run(message, ctx)
+            record_agent_result(span, "accounts", result)
     elif route == "transactions":
-        result = transactions_agent.run(message, ctx)
+        with agent_span("transactions", message, ctx) as span:
+            result = transactions_agent.run(message, ctx)
+            record_agent_result(span, "transactions", result)
     elif route == "reporting":
-        result = reporting_agent.run(message, ctx)
+        with agent_span("reporting", message, ctx) as span:
+            result = reporting_agent.run(message, ctx)
+            record_agent_result(span, "reporting", result)
     else:
-        result = knowledge_agent.run(message, ctx)
+        with agent_span("knowledge", message, ctx) as span:
+            result = knowledge_agent.run(message, ctx)
+            record_agent_result(span, "knowledge", result)
 
     result.events = events + result.events
 
