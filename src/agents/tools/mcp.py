@@ -71,11 +71,6 @@ def allowed_tools() -> set[str]:
     return {t.strip() for t in raw.split(",") if t.strip()}
 
 
-def _is_admin(ctx: AgentContext) -> bool:
-    configured = {g.strip() for g in get_settings().admin_groups.split(",") if g.strip()}
-    return bool(configured.intersection(ctx.groups or []))
-
-
 def _server_url() -> str:
     settings = get_settings()
     if settings.offline_mode or settings.local_data_mode:
@@ -109,7 +104,7 @@ def call_mcp_tool(name: str, ctx: AgentContext, **kwargs: Any) -> dict[str, Any]
                 f"Refusing to use untrusted MCP server '{server_url or '(unset)'}'."
             )
         # 2) Enforce the explicit tool allow-list.
-        if name not in allowed_tools() and not _is_admin(ctx):
+        if name not in allowed_tools():
             raise MCPToolError(
                 f"MCP tool '{name}' is not on this agent's allow-list."
             )

@@ -1007,20 +1007,18 @@ def test_v9_mcp_allowlist_blocks_state_change_when_enabled(monkeypatch):
         )
 
 
-def test_v9_mcp_admin_can_call_state_change_tool(monkeypatch):
+def test_v9_mcp_admin_cannot_bypass_allowlist(monkeypatch):
     _reload_with(monkeypatch, ENABLE_MCP_TOOL_SECURITY="true", ENABLE_HITL="false")
-    from src.agents.tools.mcp import call_mcp_tool
+    from src.agents.tools.mcp import MCPToolError, call_mcp_tool
 
-    res = call_mcp_tool(
-        "transfer_funds",
-        _ctx(groups=["zava-managers"]),
-        from_account="ACC-100001",
-        to_account="ACC-200001",
-        amount=1,
-    )
-
-    assert res["untrusted"] is True
-    assert res["data"]["status"] == "completed"
+    with pytest.raises(MCPToolError):
+        call_mcp_tool(
+            "transfer_funds",
+            _ctx(groups=["zava-managers"]),
+            from_account="ACC-100001",
+            to_account="ACC-200001",
+            amount=1,
+        )
 
 
 def test_v9_mcp_calls_any_tool_when_disabled(monkeypatch):
