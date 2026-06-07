@@ -101,6 +101,13 @@
     .access-title.cannot { color: var(--off); }
     .tokenbox { display: none; margin-top: 8px; max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-all; background: #101318; border: 1px solid var(--border); border-radius: 8px; padding: 8px; font-size: 10px; color: #cbd5e1; }
     .rail a, .session-panel a { color: #93c5fd; }
+    .repo-links { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    .repo-links a { display: block; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: #14171d; font-size: 12px; line-height: 1.3; text-decoration: none; }
+    .repo-links a:hover { background: #1f2530; }
+    .repo-links .danger { border-color: #5b2433; color: #f7b9c5; background: #20131a; }
+    .repo-links .danger:hover { background: #2a1620; }
+    .repo-links .label { display: block; color: var(--text); font-weight: 650; }
+    .repo-links .path { display: block; color: var(--muted); margin-top: 2px; word-break: break-word; }
   </style>
 </head>
 <body>
@@ -171,6 +178,27 @@
     <!-- Prompt panel -->
     <div class="card rail">
       <section>
+        <h3>Docs &amp; data</h3>
+        <div class="repo-links" aria-label="GitHub links to lab docs and data">
+          <a href="https://github.com/yelghali/damn_vulnerable_agentic_app_security/tree/main/src/data" target="_blank" rel="noreferrer">
+            <span class="label">Sample data folder</span>
+            <span class="path">src/data</span>
+          </a>
+          <a href="https://github.com/yelghali/damn_vulnerable_agentic_app_security/tree/main/src/data/docs" target="_blank" rel="noreferrer">
+            <span class="label">Knowledge docs corpus</span>
+            <span class="path">src/data/docs</span>
+          </a>
+          <a class="danger" href="https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/data/docs/poisoned-rate-disclosure.md" target="_blank" rel="noreferrer">
+            <span class="label">Poisoned rate disclosure</span>
+            <span class="path">V6 indirect prompt injection</span>
+          </a>
+          <a class="danger" href="https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/data/docs/poisoned-wire-policy.md" target="_blank" rel="noreferrer">
+            <span class="label">Poisoned wire policy</span>
+            <span class="path">V11 forged agent handoff</span>
+          </a>
+        </div>
+      </section>
+      <section>
         <h3>Prompt library</h3>
         <div class="hint">Pick a prompt, flip one control, then run it again to see the before/after.</div>
         <h4>Exploit checks</h4>
@@ -181,6 +209,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=2026-06-delete-account-governance-v1"></script>
+  <script src="/static/app.js?v=2026-06-doc-data-links-v1"></script>
 </body>
 </html>
