@@ -285,6 +285,15 @@ def test_agent_governance_posture_gate_tracks_runtime_controls(monkeypatch):
     assert all(governed[key] is True for key in AGENT_GOVERNANCE_CONTROL_KEYS)
     assert governed["pii_redaction"] is False
     assert governed["obo"] is False
+
+    governed_from_ui = client.post(
+        "/api/config/toggles",
+        json={"secure_mode": False, "controls": {"agent_governance": True}},
+    ).json()
+    assert all(governed_from_ui[key] is True for key in AGENT_GOVERNANCE_CONTROL_KEYS)
+    assert governed_from_ui["pii_redaction"] is False
+    assert governed_from_ui["obo"] is False
+
     posture_with_agent_governance = client.get("/api/lab/governance-posture").json()
     assert posture_with_agent_governance["status"] == "FAIL"
     assert posture_with_agent_governance["critical_gaps"] == 2
@@ -698,6 +707,30 @@ def test_v5_doc_security_without_azure_search_fails_closed(monkeypatch):
         search_documents("private client terms", caller_groups=["retail-customers"])
 
 
+def test_local_data_rag_uses_seeded_docs_without_doc_security(monkeypatch):
+    _reload_with(
+        monkeypatch,
+        LOCAL_DATA_MODE="true",
+        ENABLE_DOC_SECURITY="false",
+        SEARCH_ENDPOINT="https://search.test",
+        SEARCH_KEY="",
+    )
+    from src.agents.tools.search import search_documents
+
+    docs = search_documents("wire policy fees", caller_groups=["retail-customers"])
+
+    assert any(doc["id"] == "poisoned-wire-policy" for doc in docs)
+
+
+def test_local_data_benign_fee_query_does_not_pull_poisoned_docs(monkeypatch):
+    _reload_with(monkeypatch, LOCAL_DATA_MODE="true", ENABLE_DOC_SECURITY="false")
+    from src.agents.tools.search import search_documents
+
+    docs = search_documents("What are the savings account fees?", caller_groups=["retail-customers"])
+
+    assert [doc["id"] for doc in docs] == ["savings-fees"]
+
+
 def test_v5_doc_security_probe_exposes_then_fails_closed(monkeypatch):
     _reload_with(monkeypatch, ENABLE_DOC_SECURITY="false")
     from fastapi.testclient import TestClient
@@ -1004,11 +1037,22 @@ def test_v10_chat_endpoint_enforces_gateway_budget(monkeypatch):
 _A2A_QUERY = "what is the wire policy and fees?"  # routes to knowledge; retrieves the poisoned doc
 
 
+def _stub_knowledge_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.agents.knowledge import agent as knowledge_agent
+
+    monkeypatch.setattr(
+        knowledge_agent,
+        "compose_answer",
+        lambda _system_prompt, _user_message, _context="": "Wire policy summary from retrieved documents.",
+    )
+
+
 def test_v11_a2a_forged_handoff_executes_when_disabled(monkeypatch):
     # Vulnerable baseline: a poisoned doc smuggles a cross-agent handoff that
     # the orchestrator delivers to the transactions agent, which executes the
     # forged transfer. No jailbreak phrasing, so Prompt Shields doesn't catch it.
     orch, _, _ = _reload_with(monkeypatch, ENABLE_A2A_GUARD="false")
+    _stub_knowledge_answer(monkeypatch)
     res = orch.handle_turn(_A2A_QUERY, _ctx())
     assert "Transfer completed" in res.answer
     assert any("handoff executed" in e for e in res.events)
@@ -1018,6 +1062,7 @@ def test_v11_a2a_forged_handoff_blocked_when_enabled(monkeypatch):
     # Secure: the inter-agent guard re-scans the handoff message and refuses the
     # forged money-movement directive crossing the agent boundary.
     orch, _, _ = _reload_with(monkeypatch, ENABLE_A2A_GUARD="true")
+    _stub_knowledge_answer(monkeypatch)
     res = orch.handle_turn(_A2A_QUERY, _ctx())
     assert "Transfer completed" not in res.answer
     assert any("A2A BLOCKED" in e for e in res.events)

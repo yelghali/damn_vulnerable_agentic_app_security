@@ -28,6 +28,9 @@ from src.config import get_settings
 
 _DOCS_DIR = Path(__file__).resolve().parents[2] / "data" / "docs"
 _FRONT_MATTER = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
+_STOP_WORDS = {
+    "a", "an", "and", "are", "about", "for", "is", "me", "my", "of", "the", "to", "what", "with",
+}
 logger = logging.getLogger("zava.search")
 
 
@@ -70,19 +73,28 @@ def _load_offline_docs() -> list[dict[str, Any]]:
     return docs
 
 
+def _term_variants(term: str) -> set[str]:
+    variants = {term}
+    if len(term) > 3 and term.endswith("s"):
+        variants.add(term[:-1])
+    return variants
+
+
 def search_documents(
     query: str, caller_groups: list[str] | None = None, top: int = 3
 ) -> list[dict[str, Any]]:
     """Retrieve document chunks relevant to ``query``.
 
     ``caller_groups`` are the authenticated principal's Entra group/object IDs.
-    Uses Azure AI Search when ``SEARCH_ENDPOINT`` is configured. If document-level
-    security is enabled, Azure Search is required so trimming runs server-side.
-    The offline markdown corpus remains only for the intentionally vulnerable
-    local baseline.
+    Uses Azure AI Search when ``SEARCH_ENDPOINT`` is configured for the cloud data
+    plane. In ``LOCAL_DATA_MODE``, non-doc-security lab probes use the seeded
+    markdown corpus so V6/V11 remain runnable without Search credentials. If
+    document-level security is enabled, Azure Search is still required so trimming
+    runs server-side.
     """
     settings = get_settings()
-    if settings.search_endpoint:
+    use_local_corpus = settings.local_data_mode and not settings.enable_doc_security
+    if settings.search_endpoint and not use_local_corpus:
         try:
             return _azure_search(query, caller_groups, top, settings)
         except Exception as exc:  # noqa: BLE001 - Azure failure must not leak untrimmed docs
@@ -95,16 +107,25 @@ def search_documents(
 
     docs = _load_offline_docs()
 
-    # naive keyword relevance (offline). Azure AI Search does vector + semantic.
-    terms = [t for t in re.split(r"\W+", query.lower()) if t]
+    # Lightweight offline relevance. Azure AI Search does vector + semantic;
+    # locally we keep only the strongest seeded-doc matches so benign prompts do
+    # not pull poisoned lab documents into context unless the query is actually
+    # about that attack surface.
+    terms = [t for t in re.split(r"\W+", query.lower()) if t and t not in _STOP_WORDS]
     scored = []
     for d in docs:
-        hay = (d["title"] + " " + d["content"]).lower()
-        score = sum(hay.count(t) for t in terms)
+        title = d["title"].lower()
+        content = d["content"].lower()
+        score = sum(
+            (3 * title.count(variant)) + content.count(variant)
+            for term in terms
+            for variant in _term_variants(term)
+        )
         if score:
             scored.append((score, d))
     scored.sort(key=lambda x: x[0], reverse=True)
-    results = [d for _, d in scored[:top]]
+    cutoff = max(1, scored[0][0] // 2) if scored else 1
+    results = [d for score, d in scored[:top] if score >= cutoff]
 
     if settings.enable_doc_security and not _is_admin(caller_groups):
         # SECURE: document-level security trimming.

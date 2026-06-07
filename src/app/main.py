@@ -367,15 +367,15 @@ def update_toggles(req: ToggleRequest, request: Request) -> dict:
         raise HTTPException(status_code=400, detail=f"Unknown security control(s): {', '.join(unknown)}")
 
     settings = get_settings()
-    if "agent_governance" in req.controls:
-        for key in AGENT_GOVERNANCE_CONTROL_KEYS:
-            object.__setattr__(settings, SECURITY_CONTROLS[key], req.controls["agent_governance"])
     if req.secure_mode is not None:
         object.__setattr__(settings, "secure_mode", req.secure_mode)
         for attr in SECURITY_CONTROLS.values():
             object.__setattr__(settings, attr, req.secure_mode)
     for key, enabled in req.controls.items():
         object.__setattr__(settings, SECURITY_CONTROLS[key], enabled)
+    if "agent_governance" in req.controls:
+        for key in AGENT_GOVERNANCE_CONTROL_KEYS:
+            object.__setattr__(settings, SECURITY_CONTROLS[key], req.controls["agent_governance"])
     return _config_summary(request)
 
 
@@ -413,8 +413,13 @@ def doc_security_probe(req: ChatRequest, request: Request) -> ChatResponse:
         docs = search_documents("private client terms", caller_groups=groups, top=3)
     except SearchConfigurationError as exc:
         return ChatResponse(
-            answer=f"Document security failed closed: {exc}", agent="knowledge",
-            events=["doc-security: failed closed before returning untrimmed documents"],
+            answer=(
+                "Document security failed closed. Azure AI Search document-level security "
+                "is enabled, but the secure Search endpoint is not configured for this host. "
+                "No untrimmed private-client documents were returned."
+            ),
+            agent="knowledge",
+            events=[f"doc-security: failed closed before returning untrimmed documents ({exc})"],
             blocked=True, requires_approval=None, sources=[],
         )
     if not docs:
