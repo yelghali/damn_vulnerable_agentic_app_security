@@ -65,6 +65,29 @@ class ChatResponse(BaseModel):
     sources: list[dict]
 
 
+class GovernanceControlStatus(BaseModel):
+    name: str
+    status: str
+    owasp: str
+    threat: str
+    vuln: str
+    critical: bool
+    rationale: str
+
+
+class GovernancePosture(BaseModel):
+    module: str
+    status: str
+    passed: int
+    total: int
+    critical_gaps: int
+    inventory: dict[str, list[str]]
+    controls: list[GovernanceControlStatus]
+    policy_path: str
+    toolkit_command: str
+    fallback_command: str
+
+
 class IdentityInfo(BaseModel):
     authenticated: bool
     name: str | None = None
@@ -272,6 +295,47 @@ def _identity_from_request(request: Request, req: ChatRequest | None = None, inc
 @app.get("/api/config")
 def config(request: Request) -> dict:
     return _config_summary(request)
+
+
+@app.get("/api/lab/governance-posture", response_model=GovernancePosture)
+def governance_posture() -> GovernancePosture:
+    from src.scripts.governance_check import CONTROLS, INVENTORY  # noqa: PLC0415
+
+    settings = get_settings()
+    controls: list[GovernanceControlStatus] = []
+    passed = 0
+    critical_gaps = 0
+    for control in CONTROLS:
+        enabled = bool(getattr(settings, control.toggle))
+        if enabled:
+            passed += 1
+        elif control.critical:
+            critical_gaps += 1
+        controls.append(
+            GovernanceControlStatus(
+                name=control.name,
+                status="PASS" if enabled else "FAIL",
+                owasp=control.owasp,
+                threat=control.threat,
+                vuln=control.vuln,
+                critical=control.critical,
+                rationale=control.rationale,
+            )
+        )
+    total = len(CONTROLS)
+    status = "FAIL" if critical_gaps else ("PASS" if passed == total else "PASS_WITH_WARNINGS")
+    return GovernancePosture(
+        module="Module 7 - Agent Governance Toolkit posture gate",
+        status=status,
+        passed=passed,
+        total=total,
+        critical_gaps=critical_gaps,
+        inventory=INVENTORY,
+        controls=controls,
+        policy_path="src/agents/governance/policy.yaml",
+        toolkit_command="agt verify --policy src/agents/governance/policy.yaml --strict",
+        fallback_command="python -m src.scripts.governance_check",
+    )
 
 
 def _runtime_toggles_allowed(request: Request) -> bool:

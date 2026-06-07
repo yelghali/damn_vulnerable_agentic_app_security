@@ -266,6 +266,27 @@ def test_runtime_lab_toggles_can_iterate_controls(monkeypatch):
     assert reset["content_safety"] is False
 
 
+def test_agent_governance_posture_gate_tracks_runtime_controls(monkeypatch):
+    _reload_with(monkeypatch, SECURE_MODE="false")
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    client = TestClient(app)
+
+    baseline = client.get("/api/lab/governance-posture").json()
+    assert baseline["module"] == "Module 7 - Agent Governance Toolkit posture gate"
+    assert baseline["status"] == "FAIL"
+    assert baseline["critical_gaps"] > 0
+    assert baseline["toolkit_command"].startswith("agt verify")
+
+    secure = client.post("/api/config/toggles", json={"secure_mode": True}).json()
+    posture = client.get("/api/lab/governance-posture").json()
+    assert posture["status"] == "PASS"
+    assert posture["critical_gaps"] == 0
+    assert posture["passed"] == posture["total"]
+    assert posture["total"] <= len(secure["security_controls"])
+
+
 def test_tool_agent_answers_are_not_rephrased_by_model(monkeypatch):
     orch, _, _ = _reload_with(monkeypatch)
 
