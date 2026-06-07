@@ -195,7 +195,7 @@ Open [assets/diagrams/architecture.drawio](assets/diagrams/architecture.drawio) 
 | **Tool least-privilege + secure MCP through Foundry + HITL + sandboxed code + inter-agent guard** | V4 overpermissioned tools, V8 unsafe code, V9 insecure MCP, V11 agent-to-agent poisoning | 4 |
 | **Entra ID** (OBO/RBAC/Key Vault) + **AI Search document-level security** | V5 broken customer auth | 5 |
 | **APIM AI gateway** (observability, token rate limiting, key vaulting) + **Defender for Cloud** (attack & insecure-code detection) | V7 insecure infrastructure, V10 no AI gateway | 6 |
-| **Agent governance toolkit** (inventory, policy, posture gate) | V1–V11 governed as an app-level agent system | 7 |
+| **Agent governance toolkit** (inventory, policy, posture gate) | UI toggle applies the local agent/tool governance set for V4/V8/V9/V11; CLI gate audits full V1–V11 posture | 7 |
 | **Evaluations** (safety, groundedness, relevance, agentic probes) | Assurance that the mitigations hold as a regression gate | 9 |
 | **Microsoft Purview** DSPM + **DLP for AI** | V3 PII leakage, V6 data poisoning at tenant scale | 10 |
 | **AI red teaming** | Automated adversarial validation after the controls are in place | 11 |
@@ -537,7 +537,7 @@ Security features are enabled with environment variables (`SECURE_MODE=true` for
 | 4 | **Secure MCP through Foundry** + tool least-privilege + HITL + sandboxed code + inter-agent guard | V4 overpermissioned tools, V8 unsafe code, V9 insecure MCP, V11 agent-to-agent poisoning |
 | 5 | **Entra ID** (OBO/RBAC/Key Vault) + **AI Search** document-level security | V5 broken customer auth |
 | 6 | **APIM AI gateway** (observability, rate limiting) + **Defender for Cloud** | V7 insecure infrastructure, V10 no AI gateway |
-| 7 | **Agent governance toolkit** policy + posture gate | V1–V11 governed as an agent system |
+| 7 | **Agent governance toolkit** policy + posture gate | UI toggle covers V4/V8/V9/V11; CLI posture gate audits V1–V11 |
 | 8 | **Foundry** Groundedness detection + trusted ingestion | V6 data poisoning |
 | 9 | **Evaluations** safety + quality gates | assurance across V1–V11 |
 | 10 | **Microsoft Purview** DSPM + **DLP for AI** | V3 PII leakage, V6 data poisoning at tenant scale |
@@ -1510,7 +1510,7 @@ $env:SECURE_MODE='true'; py -m src.scripts.governance_check   # RESULT: PASS —
 
 That's **check #1: a governance posture gate** you can wire into CI so a regression that disables HITL or the sandbox fails the build.
 
-The chat app sidebar also surfaces this as **Agent Governance Toolkit (M7: V3/V4/V8/V9/V11)** with its own On/Off control. Turning it on applies the local agent/tool governance set; V5 Entra identity and document trimming stay separate because they require sign-in and AI Search wiring. The CLI posture gate remains the auditable proof against [src/agents/governance/policy.yaml](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/governance/policy.yaml).
+The chat app sidebar also surfaces this as **Agent Governance Toolkit (M7: V4/V8/V9/V11)** with its own On/Off control. Turning it on applies the local agent/tool governance set; V3 PII, V5 Entra identity, and document trimming stay separate because they require Azure Language, sign-in, and AI Search wiring. The CLI posture gate remains the auditable proof against [src/agents/governance/policy.yaml](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/governance/policy.yaml).
 
 **Check #2 — govern a tool at runtime.** With the real toolkit installed (`pip install agent-governance-toolkit`), wrap the highest-risk tool so the policy is enforced on every call, independently of the agent's reasoning:
 

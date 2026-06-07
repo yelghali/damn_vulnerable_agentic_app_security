@@ -283,10 +283,11 @@ def test_agent_governance_posture_gate_tracks_runtime_controls(monkeypatch):
 
     governed = client.post("/api/config/toggles", json={"controls": {"agent_governance": True}}).json()
     assert all(governed[key] is True for key in AGENT_GOVERNANCE_CONTROL_KEYS)
+    assert governed["pii_redaction"] is False
     assert governed["obo"] is False
     posture_with_agent_governance = client.get("/api/lab/governance-posture").json()
     assert posture_with_agent_governance["status"] == "FAIL"
-    assert posture_with_agent_governance["critical_gaps"] == 1
+    assert posture_with_agent_governance["critical_gaps"] == 2
 
     secure = client.post("/api/config/toggles", json={"secure_mode": True}).json()
     assert all(secure[key] is True for key in secure["security_controls"])

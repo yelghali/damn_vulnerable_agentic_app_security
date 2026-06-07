@@ -31,15 +31,14 @@ SECURITY_CONTROLS = {
     "doc_security": "enable_doc_security",
     "groundedness": "enable_groundedness",
     "secure_runtime": "enable_secure_runtime",
-    "agent_governance": "enable_agent_governance",
     "mcp_tool_security": "enable_mcp_tool_security",
     "ai_gateway": "enable_ai_gateway",
     "a2a_guard": "enable_a2a_guard",
+    "agent_governance": "enable_agent_governance",
 }
 
 AGENT_GOVERNANCE_CONTROL_KEYS = (
     "agent_governance",
-    "pii_redaction",
     "tool_least_priv",
     "hitl",
     "code_sandbox",
