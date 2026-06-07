@@ -270,6 +270,7 @@ def test_agent_governance_posture_gate_tracks_runtime_controls(monkeypatch):
     _reload_with(monkeypatch, SECURE_MODE="false")
     from fastapi.testclient import TestClient
     from src.app.main import app
+    from src.config import AGENT_GOVERNANCE_CONTROL_KEYS
 
     client = TestClient(app)
 
@@ -280,16 +281,23 @@ def test_agent_governance_posture_gate_tracks_runtime_controls(monkeypatch):
     assert any(control["name"] == "Agent Governance Toolkit posture gate" for control in baseline["controls"])
     assert baseline["toolkit_command"].startswith("agt verify")
 
+    governed = client.post("/api/config/toggles", json={"controls": {"agent_governance": True}}).json()
+    assert all(governed[key] is True for key in AGENT_GOVERNANCE_CONTROL_KEYS)
+    assert governed["obo"] is False
+    posture_with_agent_governance = client.get("/api/lab/governance-posture").json()
+    assert posture_with_agent_governance["status"] == "FAIL"
+    assert posture_with_agent_governance["critical_gaps"] == 1
+
     secure = client.post("/api/config/toggles", json={"secure_mode": True}).json()
-    assert secure["agent_governance"] is True
+    assert all(secure[key] is True for key in secure["security_controls"])
 
     disabled_gate = client.post("/api/config/toggles", json={"controls": {"agent_governance": False}}).json()
     assert disabled_gate["agent_governance"] is False
     disabled_posture = client.get("/api/lab/governance-posture").json()
     assert disabled_posture["status"] == "FAIL"
-    assert disabled_posture["critical_gaps"] == 1
+    assert disabled_posture["critical_gaps"] > 1
 
-    client.post("/api/config/toggles", json={"controls": {"agent_governance": True}})
+    client.post("/api/config/toggles", json={"secure_mode": True})
     posture = client.get("/api/lab/governance-posture").json()
     assert posture["status"] == "PASS"
     assert posture["critical_gaps"] == 0

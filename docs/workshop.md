@@ -1510,7 +1510,7 @@ $env:SECURE_MODE='true'; py -m src.scripts.governance_check   # RESULT: PASS —
 
 That's **check #1: a governance posture gate** you can wire into CI so a regression that disables HITL or the sandbox fails the build.
 
-The chat app sidebar also surfaces this as **Agent Governance Toolkit (M7)** with its own On/Off control. Turn it on by itself to show that the gate exists but still fails until the underlying critical controls are enabled; **All controls** turns on the AGT gate and the controls it evaluates, so the posture shows `PASS` against [src/agents/governance/policy.yaml](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/governance/policy.yaml).
+The chat app sidebar also surfaces this as **Agent Governance Toolkit (M7: V3/V4/V8/V9/V11)** with its own On/Off control. Turning it on applies the local agent/tool governance set; V5 Entra identity and document trimming stay separate because they require sign-in and AI Search wiring. The CLI posture gate remains the auditable proof against [src/agents/governance/policy.yaml](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/governance/policy.yaml).
 
 **Check #2 — govern a tool at runtime.** With the real toolkit installed (`pip install agent-governance-toolkit`), wrap the highest-risk tool so the policy is enforced on every call, independently of the agent's reasoning:
 

@@ -31,7 +31,7 @@ from src.agents.gateway import GatewayError, reset_gateway_budget, route_call
 from src.agents.model import ModelSafetyBlocked
 from src.agents.orchestrator.orchestrator import handle_turn
 from src.agents.types import AgentContext
-from src.config import SECURITY_CONTROLS, get_settings
+from src.config import AGENT_GOVERNANCE_CONTROL_KEYS, SECURITY_CONTROLS, get_settings
 
 logging.basicConfig(level=logging.INFO)
 
@@ -367,6 +367,9 @@ def update_toggles(req: ToggleRequest, request: Request) -> dict:
         raise HTTPException(status_code=400, detail=f"Unknown security control(s): {', '.join(unknown)}")
 
     settings = get_settings()
+    if "agent_governance" in req.controls:
+        for key in AGENT_GOVERNANCE_CONTROL_KEYS:
+            object.__setattr__(settings, SECURITY_CONTROLS[key], req.controls["agent_governance"])
     if req.secure_mode is not None:
         object.__setattr__(settings, "secure_mode", req.secure_mode)
         for attr in SECURITY_CONTROLS.values():

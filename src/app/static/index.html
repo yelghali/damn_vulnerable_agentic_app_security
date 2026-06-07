@@ -77,13 +77,6 @@
     .toggle-actions { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
     .toggle-actions button { flex: 1 1 calc(50% - 6px); min-width: 120px; padding: 7px 8px; border-radius: 8px; font-size: 11px; background: #263244; }
     .toggle-actions button:nth-child(n+3) { flex-basis: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted); }
-    .governance-status { display: inline-block; margin: 4px 0 8px; padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
-    .governance-status.pass { color: #bbf7d0; background: #14532d; }
-    .governance-status.warn { color: #fde68a; background: #4a3411; }
-    .governance-status.fail { color: #fecdd3; background: #4c1d24; }
-    .governance-list { margin: 8px 0 0; padding-left: 16px; }
-    .governance-list li { margin-bottom: 4px; }
-    .governance-command { margin-top: 8px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 7px; background: #101318; color: #cbd5e1; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; word-break: break-word; }
     .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-left: 8px; }
     .dot.on { background: var(--on); box-shadow: 0 0 6px var(--on); }
     .dot.off { background: var(--off); }
@@ -152,10 +145,6 @@
         <div class="hint">Derived by the backend from the customer and Zava groups above.</div>
       </section>
       <section>
-        <h3>Agent Governance Toolkit</h3>
-        <div class="mini" id="governance-details">loading&hellip;</div>
-      </section>
-      <section>
         <h3>Mode switch</h3>
         <div class="mini" id="mode-switch">loading&hellip;</div>
       </section>
@@ -191,6 +180,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=2026-06-governance-toggle"></script>
+  <script src="/static/app.js?v=2026-06-governance-map"></script>
 </body>
 </html>

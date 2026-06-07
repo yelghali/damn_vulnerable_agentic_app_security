@@ -17,7 +17,7 @@ const TOGGLE_LABELS = {
   doc_security: "Doc-level security (V5, AI Search)",
   groundedness: "Groundedness (V6)",
   secure_runtime: "Secure infrastructure (V7)",
-  agent_governance: "Agent Governance Toolkit (M7)",
+  agent_governance: "Agent Governance Toolkit (M7: V3/V4/V8/V9/V11)",
   mcp_tool_security: "MCP tool scoping (V9, MCP)",
   ai_gateway: "AI gateway / APIM (V10, burst)",
   a2a_guard: "Agent-to-agent guard (V11)",
@@ -27,15 +27,6 @@ const CONTROL_KEYS = Object.keys(TOGGLE_LABELS);
 
 let currentIdentity = null;
 let currentConfig = null;
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
 
 // --- One-click exploit + benign prompts -------------------------------------
 const EXPLOITS = [
@@ -149,6 +140,13 @@ function otherCustomer() {
 
 function ownCheckingAccount() {
   return ownCustomer() === "CUST-1002" ? "ACC-200001" : "ACC-100001";
+}
+
+function groupList() {
+  return ($("groups")?.value || "")
+    .split(",")
+    .map((group) => group.trim())
+    .filter(Boolean);
 }
 
 function promptText(template) {
@@ -422,7 +420,7 @@ async function loadPosture() {
   renderToggleActions(cfg);
   const modeHint = document.createElement("div");
   modeHint.className = "hint";
-  modeHint.textContent = "Some controls need Azure wiring to prove the secure path: V5 auth uses Entra sign-in, V5 doc security uses Azure AI Search, and V9 chat uses MCP only when USE_MCP_TOOLS=true. The M7 AGT toggle controls the posture gate shown below.";
+  modeHint.textContent = "Some controls need Azure wiring to prove the secure path: V5 auth uses Entra sign-in, V5 doc security uses Azure AI Search, and V9 chat uses MCP only when USE_MCP_TOOLS=true. M7 turns on the agent/tool governance set covering V3/V4/V8/V9/V11; V5 identity stays a separate sign-in control.";
   box.appendChild(modeHint);
   for (const [key, label] of Object.entries(TOGGLE_LABELS)) {
     const on = !!cfg[key];
@@ -437,31 +435,6 @@ async function loadPosture() {
   box.querySelectorAll("button[data-toggle-key]").forEach((button) => {
     button.addEventListener("click", () => toggleControl(button.dataset.toggleKey));
   });
-  loadGovernancePosture();
-}
-
-async function loadGovernancePosture() {
-  const box = $("governance-details");
-  if (!box) return;
-  try {
-    const posture = await (await fetch("/api/lab/governance-posture")).json();
-    const statusClass = posture.status === "PASS" ? "pass" : posture.status === "PASS_WITH_WARNINGS" ? "warn" : "fail";
-    const failedCritical = (posture.controls || []).filter((control) => control.critical && control.status !== "PASS");
-    const sampleFailures = failedCritical.slice(0, 4).map((control) => (
-      `<li>${escapeHtml(control.name)} <span class="vuln-badge">${escapeHtml(control.vuln)}</span></li>`
-    )).join("");
-    const extra = failedCritical.length > 4 ? `<li>${failedCritical.length - 4} more critical gap(s)</li>` : "";
-    box.innerHTML = `
-      <div><b>${escapeHtml(posture.module)}</b></div>
-      <span class="governance-status ${statusClass}">${escapeHtml(posture.status)}</span>
-      <div>${posture.passed}/${posture.total} policy controls pass · ${posture.critical_gaps} critical gap(s)</div>
-      ${failedCritical.length ? `<ul class="governance-list">${sampleFailures}${extra}</ul>` : "<div>All critical agent and tool governance controls are enforced.</div>"}
-      <div class="governance-command">${escapeHtml(posture.toolkit_command)}</div>
-      <div class="hint">Offline fallback: <code>${escapeHtml(posture.fallback_command)}</code></div>
-    `;
-  } catch (err) {
-    box.innerHTML = `<span class="governance-status fail">UNAVAILABLE</span><div>Could not load governance posture: ${escapeHtml(err)}</div>`;
-  }
 }
 
 async function updateRuntimeToggles(payload) {

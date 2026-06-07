@@ -37,6 +37,16 @@ SECURITY_CONTROLS = {
     "a2a_guard": "enable_a2a_guard",
 }
 
+AGENT_GOVERNANCE_CONTROL_KEYS = (
+    "agent_governance",
+    "pii_redaction",
+    "tool_least_priv",
+    "hitl",
+    "code_sandbox",
+    "mcp_tool_security",
+    "a2a_guard",
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
