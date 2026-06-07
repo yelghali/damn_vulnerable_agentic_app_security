@@ -203,7 +203,7 @@ function refreshPromptChips() {
     const note = button.dataset.note || promptText(template);
     const detail = button.dataset.detail || "Runs this prompt through the chat endpoint.";
     button.title = chipTitle(template, detail);
-    button.innerHTML = `<span class="tag">${tag}</span> ${note.includes("{{") ? promptText(note) : note}<span class="info-icon" title="${chipTitle(template, detail).replaceAll('"', '&quot;')}">i</span>`;
+    button.innerHTML = `<span class="tag">${tag}</span> ${note.includes("{{") ? promptText(note) : note}`;
   });
 }
 
@@ -471,7 +471,8 @@ async function loadPosture() {
     const control = cfg.runtime_toggles_allowed
       ? `<button type="button" class="${on ? "on" : "off"}" data-toggle-key="${key}">${on ? "On" : "Off"}</button>`
       : `<span class="dot ${on ? "on" : "off"}" title="${on ? "enabled" : "disabled"}"></span>`;
-    row.innerHTML = `<span class="toggle-label"><span>${label}</span><span class="info-icon" title="${detail.replaceAll('"', '&quot;')}">i</span></span>${control}`;
+    row.title = detail;
+    row.innerHTML = `<span class="toggle-label"><span>${label}</span></span>${control}`;
     box.appendChild(row);
   }
   box.querySelectorAll("button[data-toggle-key]").forEach((button) => {
@@ -541,7 +542,7 @@ function renderChips() {
     b.dataset.tag = c.tag;
     b.dataset.note = c.note;
     b.dataset.detail = c.detail || "Runs this prompt through the chat endpoint.";
-    b.innerHTML = `<span class="tag">${c.tag}</span> ${c.note}<span class="info-icon" title="${chipTitle(c.text, c.detail).replaceAll('"', '&quot;')}">i</span>`;
+    b.innerHTML = `<span class="tag">${c.tag}</span> ${c.note}`;
     b.title = chipTitle(c.text, c.detail);
     b.onclick = () => {
       $("input").value = "";
@@ -562,7 +563,7 @@ function renderChips() {
     b.dataset.tag = c.tag;
     b.dataset.note = c.text;
     b.dataset.detail = "Normal finance request used as a regression check for expected app behavior.";
-    b.innerHTML = `<span class="tag">${c.tag}</span> ${promptText(c.text)}<span class="info-icon" title="${chipTitle(c.text, b.dataset.detail).replaceAll('"', '&quot;')}">i</span>`;
+    b.innerHTML = `<span class="tag">${c.tag}</span> ${promptText(c.text)}`;
     b.title = chipTitle(c.text, b.dataset.detail);
     b.onclick = () => { $("input").value = ""; send(promptText(c.text)); };
     bn.appendChild(b);
