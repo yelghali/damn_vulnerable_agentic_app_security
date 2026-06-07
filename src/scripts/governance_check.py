@@ -49,7 +49,7 @@ class Control:
 INVENTORY = {
     "orchestrator": ["route", "input-guards", "output-guards"],
     "accounts": ["get_accounts", "get_transactions", "get_credit_score", "get_customer_profile"],
-    "transactions": ["transfer_funds", "send_statement_email"],
+    "transactions": ["transfer_funds", "send_statement_email", "delete_account"],
     "knowledge": ["search_documents"],
     "reporting": ["generate_report (code interpreter)"],
 }

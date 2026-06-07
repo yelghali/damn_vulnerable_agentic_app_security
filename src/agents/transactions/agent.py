@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from src.agents.tools.db import ToolError, get_accounts, transfer_funds
+from src.agents.tools.db import ToolError, delete_account, get_accounts, transfer_funds
 from src.agents.tools.email import EmailError, send_statement_email
 from src.agents.types import AgentContext, TurnResult
 from src.config import get_settings
@@ -62,6 +62,22 @@ def _parse_transfer(message: str, ctx: AgentContext) -> dict | None:
     }
 
 
+def _parse_delete_account(message: str) -> dict | None:
+    low = message.lower()
+    phrases = ("delete account", "delete my account", "close my account", "remove my account")
+    if not any(phrase in low for phrase in phrases):
+        return None
+    m = re.search(
+        r"(?:account|acct)\s+([a-z]{2,5}-?\d{2,}|demo-delete-\d+)",
+        message,
+        re.IGNORECASE,
+    )
+    return {
+        "tool": "delete_account",
+        "account_id": m.group(1).upper() if m else "DEMO-DELETE-001",
+    }
+
+
 def run(message: str, ctx: AgentContext) -> TurnResult:
     settings = get_settings()
     events: list[str] = []
@@ -97,6 +113,20 @@ def run(message: str, ctx: AgentContext) -> TurnResult:
                 events=events,
             )
         except ToolError as e:
+            return TurnResult(answer=str(e), agent="transactions", events=events, blocked=True)
+
+    delete_action = _parse_delete_account(message)
+    if delete_action:
+        try:
+            result = delete_account(
+                delete_action["account_id"],
+                caller_id=ctx.customer_id,
+                caller_groups=ctx.groups,
+            )
+            events.append("transactions: LAB-VULN delete_account accepted without governance")
+            return TurnResult(answer=result["message"], agent="transactions", events=events)
+        except ToolError as e:
+            events.append("transactions: AGT policy denied delete_account")
             return TurnResult(answer=str(e), agent="transactions", events=events, blocked=True)
 
     if "statement" in message.lower() or "email" in message.lower():

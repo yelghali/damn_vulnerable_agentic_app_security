@@ -55,7 +55,11 @@ def _route(message: str) -> str:
         )
     ):
         return "orchestrator"
-    if any(k in low for k in ("transfer", "send", "email", "statement", "pay")):
+    transaction_terms = (
+        "transfer", "send", "email", "statement", "pay",
+        "delete", "close my account", "remove my account",
+    )
+    if any(k in low for k in transaction_terms):
         return "transactions"
     if any(k in low for k in ("report", "summary", "chart", "summarize")):
         return "reporting"

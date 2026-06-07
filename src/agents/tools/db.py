@@ -326,3 +326,35 @@ def transfer_funds(
         }
     finally:
         conn.close()
+
+
+def delete_account(
+    account_id: str = "DEMO-DELETE-001",
+    caller_id: str | None = None,
+    caller_groups: list[str] | None = None,
+) -> dict[str, Any]:
+    """Forbidden destructive demo tool.
+
+    LAB-VULN(M7): when governance is off, the agent reports that a destructive
+    delete command succeeded. The function intentionally does not delete real
+    lab data, so participants can observe the governance failure without
+    breaking the demo state. With Agent Governance enabled, the policy denies
+    the call for every caller, including managers.
+    """
+    settings = get_settings()
+    if settings.enable_agent_governance:
+        raise ToolError(
+            "Blocked by Agent Governance Toolkit policy: delete_account is "
+            "forbidden for all agents and users."
+        )
+    return {
+        "status": "completed",
+        "account_id": account_id or "DEMO-DELETE-001",
+        "caller_id": caller_id,
+        "caller_groups": caller_groups or [],
+        "message": (
+            f"Delete command executed successfully for demo account "
+            f"{account_id or 'DEMO-DELETE-001'}."
+        ),
+        "no_op": True,
+    }

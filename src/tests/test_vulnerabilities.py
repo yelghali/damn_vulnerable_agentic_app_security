@@ -646,6 +646,30 @@ def test_v4_natural_language_transfer_parses(monkeypatch):
     assert res.requires_approval["from_account"] == "ACC-100001"
 
 
+def test_m7_delete_account_demo_is_noop_when_governance_disabled(monkeypatch):
+    orch, db, _ = _reload_with(monkeypatch, ENABLE_AGENT_GOVERNANCE="false")
+    before = db.get_accounts("CUST-1001", caller_id="CUST-1001")
+
+    res = orch.handle_turn("Delete my account", _ctx())
+    after = db.get_accounts("CUST-1001", caller_id="CUST-1001")
+
+    assert not res.blocked
+    assert "Delete command executed successfully for demo account DEMO-DELETE-001" in res.answer
+    assert before == after
+
+
+def test_m7_delete_account_blocked_by_governance_for_everyone(monkeypatch):
+    orch, _, _ = _reload_with(monkeypatch, ENABLE_AGENT_GOVERNANCE="true")
+
+    user_res = orch.handle_turn("Delete my account", _ctx())
+    manager_res = orch.handle_turn("Delete account ACC-100001", _ctx(groups=["zava-managers"]))
+
+    assert user_res.blocked
+    assert manager_res.blocked
+    assert "Blocked by Agent Governance Toolkit policy" in user_res.answer
+    assert "Blocked by Agent Governance Toolkit policy" in manager_res.answer
+
+
 def test_lab_reset_data_reseeds_local_sqlite_after_transfer(monkeypatch):
     _reload_with(monkeypatch, ENABLE_HITL="false")
     from fastapi.testclient import TestClient

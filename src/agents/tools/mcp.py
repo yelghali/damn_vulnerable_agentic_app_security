@@ -30,6 +30,7 @@ from typing import Any, Callable
 
 from src.agents.tools.db import (
     ToolError,
+    delete_account,
     get_accounts,
     get_credit_score,
     get_transactions,
@@ -57,6 +58,7 @@ _DISPATCH: dict[str, Callable[..., Any]] = {
     "get_transactions": get_transactions,
     "get_credit_score": get_credit_score,
     "transfer_funds": transfer_funds,
+    "delete_account": delete_account,
 }
 
 
