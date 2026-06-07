@@ -241,7 +241,7 @@ Each Part-2 module touches a single, obvious lever. This map lists the **toggle-
 
 > **Toggle acronyms in that table:** `TOOL_LEAST_PRIV` = tool least-privilege (each tool gets *only* the permissions it needs) · `HITL` = human-in-the-loop approval on risky actions · `MCP_TOOL_SECURITY` = scope/allow-list remote Model Context Protocol tools · `CODE_SANDBOX` = run model-written code in an isolated sandbox · `OBO` = Entra ID On-Behalf-Of token flow · `DOC_SECURITY` = AI Search document-level access control · `SECURE_RUNTIME` = private endpoints + safe error handling. (Full glossary is in the *Acronym decoder* box near the top.)
 >
-> **Why are some rows marked script-backed or portal-backed?** Only a few modules are simple `ENABLE_*` switches. **Module 7** is an executable governance posture gate (`python -m src.scripts.governance_check`), **Module 9** runs evaluation scripts ([src/evals/run.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/evals/run.py)), **Module 10** is Purview configuration in the Azure / Microsoft Purview portals, and **Module 11** runs automated AI red teaming ([src/redteam/run.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/redteam/run.py)).
+> **Why are some rows marked script-backed or portal-backed?** Only a few modules are simple `ENABLE_*` switches. **Module 7** now has the same on/off sidebar toggle (`ENABLE_AGENT_GOVERNANCE`) and an executable posture gate (`python -m src.scripts.governance_check`), **Module 9** runs evaluation scripts ([src/evals/run.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/evals/run.py)), **Module 10** is Purview configuration in the Azure / Microsoft Purview portals, and **Module 11** runs automated AI red teaming ([src/redteam/run.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/redteam/run.py)).
 
 The master switch is `SECURE_MODE`. Any individual toggle left unset inherits `SECURE_MODE`, so:
 
@@ -1485,7 +1485,7 @@ rules:
 
 ### 2 · Run the posture check (two security checks, offline)
 
-Run the governance gate. In the **vulnerable baseline it FAILs** — seven critical controls are off — and the report names each gap with its `Tn` threat and `Vn`:
+Run the governance gate. In the **vulnerable baseline it FAILs** — eight critical controls are off, including the AGT gate itself — and the report names each gap with its `Tn` threat and `Vn`:
 
 ```bash
 python -m src.scripts.governance_check          # exits non-zero -> CI gate fails
@@ -1493,7 +1493,7 @@ python -m src.scripts.governance_check          # exits non-zero -> CI gate fail
 # Human-in-the-loop on money movement     FAIL  T10   V4  <- critical
 # Sandboxed code execution                FAIL  T11   V8  <- critical
 # Agent-to-agent message guard            FAIL  T12   V11 <- critical
-# Posture: 0/13 controls enabled · 7 critical gap(s).   RESULT: FAIL
+# Posture: 0/14 controls enabled · 8 critical gap(s).   RESULT: FAIL
 ```
 
 Now flip the answer key and re-run — every control passes and the gate goes green:
@@ -1510,7 +1510,7 @@ $env:SECURE_MODE='true'; py -m src.scripts.governance_check   # RESULT: PASS —
 
 That's **check #1: a governance posture gate** you can wire into CI so a regression that disables HITL or the sandbox fails the build.
 
-The chat app sidebar also surfaces this as **Agent Governance Toolkit** so participants can see the same policy gate while they flip controls: baseline shows `FAIL` with the critical gaps, and **All controls** shows `PASS` against [src/agents/governance/policy.yaml](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/governance/policy.yaml).
+The chat app sidebar also surfaces this as **Agent Governance Toolkit (M7)** with its own On/Off control. Turn it on by itself to show that the gate exists but still fails until the underlying critical controls are enabled; **All controls** turns on the AGT gate and the controls it evaluates, so the posture shows `PASS` against [src/agents/governance/policy.yaml](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/governance/policy.yaml).
 
 **Check #2 — govern a tool at runtime.** With the real toolkit installed (`pip install agent-governance-toolkit`), wrap the highest-risk tool so the policy is enforced on every call, independently of the agent's reasoning:
 

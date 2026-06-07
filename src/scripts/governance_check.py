@@ -56,6 +56,9 @@ INVENTORY = {
 
 # The controls the policy expects to be in force, highest-risk first.
 CONTROLS = [
+    Control("Agent Governance Toolkit posture gate", "enable_agent_governance",
+            "LLM06", "T2/T8/T12", "M7", True,
+            "AGT policy verification is active as the agent-system governance gate."),
     Control("Human-in-the-loop on money movement", "enable_hitl",
             "LLM06", "T10", "V4", True,
             "transfer_funds / send_statement_email must pause for human approval."),

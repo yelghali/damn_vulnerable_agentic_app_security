@@ -17,6 +17,7 @@ const TOGGLE_LABELS = {
   doc_security: "Doc-level security (V5, AI Search)",
   groundedness: "Groundedness (V6)",
   secure_runtime: "Secure infrastructure (V7)",
+  agent_governance: "Agent Governance Toolkit (M7)",
   mcp_tool_security: "MCP tool scoping (V9, MCP)",
   ai_gateway: "AI gateway / APIM (V10, burst)",
   a2a_guard: "Agent-to-agent guard (V11)",
@@ -421,7 +422,7 @@ async function loadPosture() {
   renderToggleActions(cfg);
   const modeHint = document.createElement("div");
   modeHint.className = "hint";
-  modeHint.textContent = "Some controls need Azure wiring to prove the secure path: V5 auth uses Entra sign-in, V5 doc security uses Azure AI Search, V9 chat uses MCP only when USE_MCP_TOOLS=true, and Module 7 is checked by the AGT posture gate below.";
+  modeHint.textContent = "Some controls need Azure wiring to prove the secure path: V5 auth uses Entra sign-in, V5 doc security uses Azure AI Search, and V9 chat uses MCP only when USE_MCP_TOOLS=true. The M7 AGT toggle controls the posture gate shown below.";
   box.appendChild(modeHint);
   for (const [key, label] of Object.entries(TOGGLE_LABELS)) {
     const on = !!cfg[key];

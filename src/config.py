@@ -31,6 +31,7 @@ SECURITY_CONTROLS = {
     "doc_security": "enable_doc_security",
     "groundedness": "enable_groundedness",
     "secure_runtime": "enable_secure_runtime",
+    "agent_governance": "enable_agent_governance",
     "mcp_tool_security": "enable_mcp_tool_security",
     "ai_gateway": "enable_ai_gateway",
     "a2a_guard": "enable_a2a_guard",
@@ -71,6 +72,7 @@ class Settings(BaseSettings):
     enable_doc_security: bool | None = Field(default=None, alias="ENABLE_DOC_SECURITY")      # V5
     enable_groundedness: bool | None = Field(default=None, alias="ENABLE_GROUNDEDNESS")      # V6
     enable_secure_runtime: bool | None = Field(default=None, alias="ENABLE_SECURE_RUNTIME")  # V7
+    enable_agent_governance: bool | None = Field(default=None, alias="ENABLE_AGENT_GOVERNANCE")  # M7
     enable_mcp_tool_security: bool | None = Field(default=None, alias="ENABLE_MCP_TOOL_SECURITY")  # V9
     enable_ai_gateway: bool | None = Field(default=None, alias="ENABLE_AI_GATEWAY")          # V10
     enable_a2a_guard: bool | None = Field(default=None, alias="ENABLE_A2A_GUARD")            # V11

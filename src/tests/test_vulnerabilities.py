@@ -277,9 +277,19 @@ def test_agent_governance_posture_gate_tracks_runtime_controls(monkeypatch):
     assert baseline["module"] == "Module 7 - Agent Governance Toolkit posture gate"
     assert baseline["status"] == "FAIL"
     assert baseline["critical_gaps"] > 0
+    assert any(control["name"] == "Agent Governance Toolkit posture gate" for control in baseline["controls"])
     assert baseline["toolkit_command"].startswith("agt verify")
 
     secure = client.post("/api/config/toggles", json={"secure_mode": True}).json()
+    assert secure["agent_governance"] is True
+
+    disabled_gate = client.post("/api/config/toggles", json={"controls": {"agent_governance": False}}).json()
+    assert disabled_gate["agent_governance"] is False
+    disabled_posture = client.get("/api/lab/governance-posture").json()
+    assert disabled_posture["status"] == "FAIL"
+    assert disabled_posture["critical_gaps"] == 1
+
+    client.post("/api/config/toggles", json={"controls": {"agent_governance": True}})
     posture = client.get("/api/lab/governance-posture").json()
     assert posture["status"] == "PASS"
     assert posture["critical_gaps"] == 0
