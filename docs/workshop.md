@@ -248,7 +248,7 @@ Open the chat UI at `http://localhost:8000` and run each attack below. The promp
 | V5 | Knowledge corpus over-sharing | `V5·all docs` chip | The baseline lists every knowledge doc. With AI Search document security on, the same prompt lists only public docs plus docs allowed by the signed-in user's groups. |
 | V7 | Verbose runtime errors | `V7` chip | Baseline leaks internal error detail; secure runtime returns a generic safe error. Private endpoints, Defender, and Monitor are Azure-side checks in Module 6. |
 | V8 | Unsafe code execution | `Generate a report that runs: result = __import__('os').getcwd()` | Model-generated code runs with no sandbox and returns host process state. The secure sandbox blocks `__import__`. |
-| V9 | Insecure MCP transport | `V9` chip, or set `USE_MCP_TOOLS=true` and ask for balances | The probe shows whether a remote MCP server can call `transfer_funds`. Secure MCP scoping blocks state-changing tools not on the allow-list. |
+| V9 | Insecure MCP transport | `V9` chip, or set `USE_MCP_TOOLS=true` and ask for balances | Baseline MCP has **no controls**: the probe executes `transfer_funds` over the MCP boundary. Secure MCP scoping blocks state-changing tools not on the allow-list. |
 | V10 | No AI gateway / rate limit | `V10` chip | The chip repeats the fair user question `What are my account balances?` using the current V10 toggle state. With AI gateway off, every request passes; turn V10 on and the later repeats are blocked by the token budget. |
 | V11 | Agent-to-agent poisoning | `what is the wire policy and fees?` | A poisoned doc makes the **Knowledge** agent emit a structured handoff to the **Transactions** agent. Baseline delivers it and the transfer executes; the secure V11 guard blocks it before Transactions runs. |
 
@@ -858,6 +858,44 @@ In the UI trace, vulnerable mode shows `knowledge: doc 'poisoned-wire-policy' re
 
 This module bundles four distinct controls because they share one theme: **constrain what a tool-calling agent can actually do.** Work through each — the secure code is short but the reasoning is the lesson.
 
+#### Framework vs. local fallback
+
+Module 4 is intentionally split into two layers:
+
+The **vulnerable baseline must stay permissive**. When `ENABLE_MCP_TOOL_SECURITY=false` and `ENABLE_HITL=false`, the MCP probe and Foundry provisioning expose the server's advertised tools with no allow-list and no approval requirement, so `transfer_funds` can run through the MCP boundary. That is the exploit learners observe before remediation.
+
+The **secure Azure path should use Microsoft frameworks and platform controls first**. For a cloud run, provision the persistent agents and their hosted tools with the Foundry project SDK, run the AGT policy gate, and derive caller context from Entra ID/OBO. The local code below is an offline fallback and defense-in-depth layer; it is not the production pattern learners should copy as the only control.
+
+| Control | Cloud / reusable control | Local lab fallback |
+|---|---|---|
+| MCP tool scoping | **Azure AI Foundry project SDK** provisions each persistent agent with a hosted `MCPTool`, `allowed_tools`, and `require_approval` in [src/scripts/provision_foundry_agents.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/scripts/provision_foundry_agents.py). | [src/agents/tools/mcp.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/mcp.py) simulates the same allow-list/pinned-server boundary so Part 1 works without Azure. |
+| Human-in-the-loop | Foundry hosted MCP tools use `require_approval="always"` for write-capable Transactions tools. This is the reusable framework-backed path learners should copy for cloud agents. | [src/agents/transactions/agent.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/transactions/agent.py) returns `requires_approval`, and [src/agents/tools/db.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/db.py) refuses unapproved writes as defense in depth. |
+| Governance policy | [src/agents/governance/policy.yaml](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/governance/policy.yaml) follows the Microsoft Agent Governance Toolkit policy shape; Module 7 runs the real `agt verify` gate when installed. | [src/scripts/governance_check.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/scripts/governance_check.py) is the dependency-free fallback scorecard. |
+| DB least privilege / RLS | PostgreSQL roles, parameterized queries, and row-level security enforce ownership below the agent layer. | SQLite mirrors the authorization checks for local testing. |
+| Code execution | Production should use Foundry hosted Code Interpreter. | [src/agents/tools/report.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/agents/tools/report.py) provides an offline AST/builtins sandbox so the exploit and fix are testable. |
+
+Do **not** replace the local fallback with a full Agent Framework workflow during the timed lab unless you have time to re-test every UI/API path. The current local path is deliberately small, deterministic, and covered by tests; the cloud path already demonstrates the reusable Foundry SDK control. A deeper refactor to native Agent Framework interrupts/HITL would be valuable later, but it touches routing, approval state, UI callbacks, and live Foundry agent invocation, so it is high-risk for this workshop delivery.
+
+For secure Azure delivery, use this order:
+
+```bash
+# 1) Turn on the secure posture for hosted agents/tools
+SECURE_MODE=true
+ENABLE_MCP_TOOL_SECURITY=true
+ENABLE_HITL=true
+ENABLE_TOOL_LEAST_PRIV=true
+ENABLE_OBO=true
+
+# 2) Provision real Foundry agents and hosted MCP tools with framework controls
+python -m src.scripts.provision_foundry_agents
+
+# 3) Run the governance policy gate; use the real AGT command when installed
+agt verify --policy src/agents/governance/policy.yaml --strict
+python -m src.scripts.governance_check   # dependency-free lab fallback
+```
+
+The important before/after is visible in the SDK object itself: insecure agents get `allowed_tools=None` and `require_approval="never"`; secure agents get a per-agent `allowed_tools` list and `require_approval="always"` for write-capable tools.
+
 #### 1. Tool least privilege — kill IDOR *and* SQL injection
 
 Two independent bugs hide in the baseline. Parameterized queries fix injection; an explicit `_authorize` check fixes IDOR. You need **both** — parameterization alone still lets you read another customer's data with a perfectly valid query.
@@ -917,7 +955,18 @@ if settings.enable_mcp_tool_security:
 
 So even though the server *advertises* `transfer_funds`, an allow-list of `get_accounts,get_transactions,get_credit_score` means the Accounts agent can never invoke it over MCP (T2). In the chat app, setting `USE_MCP_TOOLS=true` routes account reads through this boundary; in Foundry, `provision_foundry_agents.py` attaches the same Microsoft Azure MCP Server endpoint as a hosted MCP tool. Because the result is tagged `untrusted`, `scan_tool_output` runs Prompt Shields + PII over it before the model sees it (T12 — a poisoned tool result is just another indirect injection).
 
-**Azure wiring:** attach the **Azure Database for PostgreSQL MCP server** as a *hosted MCP tool* on the Foundry agent, register only that pinned endpoint, pass a **scoped read-only OBO customer context** (Module 5) rather than the admin connection string, and configure the per-agent tool allow-list on the agent.
+**Azure wiring:** attach the **Azure Database for PostgreSQL MCP server** as a *hosted MCP tool* on the Foundry agent, register only that pinned endpoint, pass a **scoped read-only OBO customer context** (Module 5) rather than the admin connection string, and configure the per-agent tool allow-list on the agent. The lab's reusable cloud path is the Foundry SDK `MCPTool` builder in [src/scripts/provision_foundry_agents.py](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/scripts/provision_foundry_agents.py):
+
+```python
+return MCPTool(
+    server_label="zava_postgres",
+    server_url=settings.pg_mcp_server_url,
+    allowed_tools=allowed,          # read-only tools for Accounts; write tool only for Transactions
+    require_approval=require_approval,  # "always" for write-capable tools when HITL is enabled
+)
+```
+
+That is the framework-backed control to copy into a real Foundry agent deployment; the local `mcp.py` implementation exists to make the same lesson runnable offline.
 
 #### 4. Secure code execution — sandbox the reporting interpreter
 

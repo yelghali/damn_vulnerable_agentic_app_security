@@ -1027,10 +1027,17 @@ def test_v9_mcp_calls_any_tool_when_disabled(monkeypatch):
     _reload_with(monkeypatch, ENABLE_MCP_TOOL_SECURITY="false", ENABLE_HITL="false")
     from src.agents.tools.mcp import call_mcp_tool
 
-    # Vulnerable transport: no allow-list, output trusted, any tool callable.
-    res = call_mcp_tool("get_accounts", _ctx(), customer_id="CUST-1002")
+    # Vulnerable transport: no allow-list, output trusted, any advertised tool
+    # callable — including the state-changing transfer_funds tool.
+    res = call_mcp_tool(
+        "transfer_funds",
+        _ctx(),
+        from_account="ACC-100001",
+        to_account="ACC-200001",
+        amount=1,
+    )
     assert res["untrusted"] is False
-    assert res["data"]
+    assert res["data"]["status"] == "completed"
 
 
 def test_v9_mcp_marks_output_untrusted_when_enabled(monkeypatch):
