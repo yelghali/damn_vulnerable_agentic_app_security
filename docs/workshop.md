@@ -348,6 +348,13 @@ Terraform emits `app_url` when `deploy_app=true`. For browser-only learners, use
 
 Set `VULNERABLE_APP_URL` and `SECURE_APP_URL` so the UI shows a **Mode switch**.
 
+If the vulnerable hosted app uses the ACA-hosted Ollama/Phi baseline
+(`app_offline_mode=true`, `phi3:mini`), keep the model Container App to one
+active replica unless you configure persistent storage for the Ollama model
+directory. The model is pulled into the serving container; with multiple
+ephemeral replicas, one replica can have `phi3:mini` while another returns
+`model not found`, and the lab intentionally fails instead of using fake AI.
+
 ### Multi-user classroom mode
 
 For a cohort, duplicate only what learners mutate and keep expensive services shared:

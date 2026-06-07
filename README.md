@@ -152,6 +152,12 @@ when `USE_MCP_TOOLS=true`, and APIM when `ENABLE_AI_GATEWAY=true`. See
 [docs/workshop.md](docs/workshop.md) for region/quota prerequisites and the
 tenant-admin prep steps (Entra app registration, Purview) with fallbacks.
 
+When using the ACA-hosted Ollama/Phi baseline, keep the model Container App at
+one active replica unless you also attach persistent storage for `/root/.ollama`
+or `OLLAMA_MODELS`. Pulling `phi3:mini` into one ephemeral replica does not make
+it available to another replica, and the app will fail loudly with `model not
+found` instead of falling back to a mock response.
+
 For instructor-led cohorts, enable `enable_cohort_mode=true`. The default starts
 with `user_1` and `user_2`: each user gets a Foundry project, APIM API path, and
 optional hosted app URL, while AI Search, PostgreSQL, MCP, Key Vault, Monitor,
