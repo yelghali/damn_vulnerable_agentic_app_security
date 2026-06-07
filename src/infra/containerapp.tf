@@ -188,6 +188,14 @@ resource "azurerm_container_app" "zava_app" {
     value = var.app_registry_password == "" ? "not-set" : var.app_registry_password
   }
 
+  dynamic "secret" {
+    for_each = var.secure_mode ? [] : [1]
+    content {
+      name  = "search-key"
+      value = azurerm_search_service.search.primary_key
+    }
+  }
+
   dynamic "registry" {
     for_each = var.app_registry_server == "" ? [] : [1]
     content {
@@ -212,8 +220,16 @@ resource "azurerm_container_app" "zava_app" {
         value = tostring(var.app_offline_mode)
       }
       env {
+        name  = "LOCAL_DATA_MODE"
+        value = tostring(var.app_offline_mode)
+      }
+      env {
         name  = "SECURE_MODE"
         value = tostring(var.secure_mode)
+      }
+      env {
+        name  = "ENABLE_RUNTIME_TOGGLES"
+        value = tostring(var.app_enable_runtime_toggles)
       }
       env {
         name  = "LOCAL_MODEL_ENDPOINT"
@@ -250,6 +266,13 @@ resource "azurerm_container_app" "zava_app" {
       env {
         name  = "SEARCH_INDEX_NAME"
         value = "zava-financial-docs"
+      }
+      dynamic "env" {
+        for_each = var.secure_mode ? [] : [1]
+        content {
+          name        = "SEARCH_KEY"
+          secret_name = "search-key"
+        }
       }
       env {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
@@ -321,7 +344,7 @@ resource "azurerm_role_assignment" "app_to_ai_services" {
 }
 
 resource "azurerm_role_assignment" "app_to_search" {
-  count                = var.deploy_app && !var.app_offline_mode ? 1 : 0
+  count                = var.deploy_app ? 1 : 0
   scope                = azurerm_search_service.search.id
   role_definition_name = "Search Index Data Reader"
   principal_id         = azurerm_container_app.zava_app[0].identity[0].principal_id
@@ -357,6 +380,14 @@ resource "azurerm_container_app" "zava_user_app" {
     value = var.app_registry_password == "" ? "not-set" : var.app_registry_password
   }
 
+  dynamic "secret" {
+    for_each = var.secure_mode ? [] : [1]
+    content {
+      name  = "search-key"
+      value = azurerm_search_service.search.primary_key
+    }
+  }
+
   dynamic "registry" {
     for_each = var.app_registry_server == "" ? [] : [1]
     content {
@@ -385,8 +416,16 @@ resource "azurerm_container_app" "zava_user_app" {
         value = tostring(var.app_offline_mode)
       }
       env {
+        name  = "LOCAL_DATA_MODE"
+        value = tostring(var.app_offline_mode)
+      }
+      env {
         name  = "SECURE_MODE"
         value = tostring(var.secure_mode)
+      }
+      env {
+        name  = "ENABLE_RUNTIME_TOGGLES"
+        value = tostring(var.app_enable_runtime_toggles)
       }
       env {
         name  = "LOCAL_MODEL_ENDPOINT"
@@ -423,6 +462,13 @@ resource "azurerm_container_app" "zava_user_app" {
       env {
         name  = "SEARCH_INDEX_NAME"
         value = "zava-financial-docs"
+      }
+      dynamic "env" {
+        for_each = var.secure_mode ? [] : [1]
+        content {
+          name        = "SEARCH_KEY"
+          secret_name = "search-key"
+        }
       }
       env {
         name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
@@ -498,7 +544,7 @@ resource "azurerm_role_assignment" "cohort_app_to_ai_services" {
 }
 
 resource "azurerm_role_assignment" "cohort_app_to_search" {
-  for_each             = var.deploy_app && var.deploy_cohort_apps && !var.app_offline_mode ? local.cohort_user_map : {}
+  for_each             = var.deploy_app && var.deploy_cohort_apps ? local.cohort_user_map : {}
   scope                = azurerm_search_service.search.id
   role_definition_name = "Search Index Data Reader"
   principal_id         = azurerm_container_app.zava_user_app[each.key].identity[0].principal_id

@@ -132,7 +132,8 @@ cd src/infra
 terraform init
 terraform apply `
   -var deploy_app=true `
-  -var app_container_image=<registry>/zava-lab:latest
+  -var app_container_image=<registry>/zava-lab:latest `
+  -var app_enable_runtime_toggles=true
 ```
 
 This stands up the Foundry project + model deployments, Azure AI Search, PostgreSQL
@@ -145,12 +146,21 @@ to seed PostgreSQL and AI Search. The hosted vulnerable app defaults to
 `app_offline_mode=true`, which deploys an internal ACA-hosted Ollama/Phi model
 (`phi3:mini`) and points the app at its OpenAI-compatible `/v1` endpoint. That
 keeps the Part 1 model demo outside Azure Foundry guardrails, like Foundry Local
-on a laptop, while still using container-local sample data. Set
+on a laptop, while still using container-local sample data. Terraform also wires
+Azure AI Search into the app: in the default public lab posture the Search key is
+stored as a Container Apps secret reference, and in hardened `secure_mode=true`
+the app uses its managed identity with `Search Index Data Reader` instead. Set
 `-var app_offline_mode=false` when you want that hosted vulnerable app to call
 Azure Foundry models, Azure Database for PostgreSQL, the Microsoft Azure MCP Server
 when `USE_MCP_TOOLS=true`, and APIM when `ENABLE_AI_GATEWAY=true`. See
 [docs/workshop.md](docs/workshop.md) for region/quota prerequisites and the
 tenant-admin prep steps (Entra app registration, Purview) with fallbacks.
+
+After Terraform completes, run `python -m src.scripts.seed` with the emitted
+`SEARCH_ENDPOINT` (and either Search RBAC or a Search key) so the sample docs are
+uploaded to the `zava-financial-docs` index. To prove secure document trimming,
+turn on `ENABLE_OBO=true` and `ENABLE_DOC_SECURITY=true`: `user_1` should see
+public/retail docs only, while `zava_manager` should also see private-client docs.
 
 When using the ACA-hosted Ollama/Phi baseline, keep the model Container App at
 one active replica unless you also attach persistent storage for `/root/.ollama`

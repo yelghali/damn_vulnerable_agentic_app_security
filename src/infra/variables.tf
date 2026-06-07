@@ -199,6 +199,12 @@ variable "app_offline_mode" {
   description = "true = browser-accessible vulnerable baseline with container-local SQLite and the hosted local model endpoint. false = app calls Azure Foundry/PostgreSQL/MCP/APIM using the env below."
 }
 
+variable "app_enable_runtime_toggles" {
+  type        = bool
+  default     = false
+  description = "Expose runtime lab toggles in the hosted app. Use true only for instructor validation or trusted lab sandboxes; paired app URLs are preferred for public learner deployments."
+}
+
 variable "deploy_vulnerable_local_model" {
   type        = bool
   default     = true

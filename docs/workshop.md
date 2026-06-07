@@ -336,7 +336,8 @@ cd src/infra
 terraform init
 terraform apply \
     -var deploy_app=true \
-    -var app_container_image=<registry>/zava-lab:latest
+    -var app_container_image=<registry>/zava-lab:latest \
+    -var app_enable_runtime_toggles=true
 cd ../..
 python -m src.scripts.seed   # seed Postgres + upload sample docs (incl. poisoned docs)
 ```
@@ -347,6 +348,20 @@ Terraform emits `app_url` when `deploy_app=true`. For browser-only learners, use
 - **Secure app URL** — `SECURE_MODE=true` or selected `ENABLE_*` flags, connected to Azure Foundry/Search/PostgreSQL/MCP/APIM for Part 2.
 
 Set `VULNERABLE_APP_URL` and `SECURE_APP_URL` so the UI shows a **Mode switch**.
+
+Terraform wires Azure AI Search into hosted app deployments. In the default
+public lab posture, `SEARCH_KEY` is a Container Apps secret reference; in
+`secure_mode=true`, the hosted app uses its managed identity and the Terraform
+`Search Index Data Reader` role assignment. Always run the seed step after the
+Search service exists so `zava-financial-docs` contains the sample docs and
+`group_ids` ACLs.
+
+Quick secure Search proof: enable `ENABLE_OBO=true` and `ENABLE_DOC_SECURITY=true`,
+then run the `V5·docs` or `V5·all docs` prompt as both `user_1` and
+`zava_manager`. `user_1` should see public/retail docs and no private-client
+terms. `zava_manager` should see public, retail, and private-client docs. If
+Search is missing or misconfigured, secure mode must fail closed rather than
+reading local markdown.
 
 If the vulnerable hosted app uses the ACA-hosted Ollama/Phi baseline
 (`app_offline_mode=true`, `phi3:mini`), keep the model Container App to one
