@@ -1257,6 +1257,33 @@ AppDependencies
 | order by TimeGenerated desc
 ```
 
+#### Portal check — see the logs and metrics
+
+After you run a few prompts in the app, use the Azure portal to prove the observability path is real:
+
+1. Azure portal → resource group `rg-...` → **Application Insights** `appi-...` → **Transaction search**. Filter for `POST /api/chat` and open one request. The end-to-end view shows the request plus child dependency spans such as `agent.orchestrator`, `agent.accounts`, `agent.transactions`, `agent.reporting`, or `agent.knowledge`.
+2. Application Insights → **Logs** → run the `AppDependencies` query above. For prompt logs and structured agent completion events, run:
+
+    ```kusto
+    AppTraces
+    | where Message contains "agent turn completed" or Message startswith "user turn"
+    | project TimeGenerated, AppRoleName, Message, Properties
+    | order by TimeGenerated desc
+    ```
+
+3. Azure portal → **API Management** `apim-...` → **Metrics**. Chart **Requests**, **Duration**, **Backend duration**, and error counts while you click the `V10` chip.
+4. API Management → **Logs** or the shared **Log Analytics workspace** `log-...` → query AI gateway categories. Depending on the workspace table mode, APIM records appear in resource-specific tables or `AzureDiagnostics`:
+
+    ```kusto
+    AzureDiagnostics
+    | where ResourceProvider == "MICROSOFT.APIMANAGEMENT"
+    | where Category in ("GatewayLogs", "GatewayLlmLogs", "GatewayMCPLogs")
+    | project TimeGenerated, Category, OperationName, ResultType, DurationMs, properties_s
+    | order by TimeGenerated desc
+    ```
+
+5. Azure portal → **Container Apps Environment** `cae-...` → **Logs**. Check `ContainerAppConsoleLogs_CL`, `ContainerAppSystemLogs_CL`, and HTTP logs for container/runtime evidence beside the App Insights traces.
+
 **Secure infrastructure (V7)** wraps this with **private endpoints / VNet** (no public model/tool surface), **Defender for Cloud** AI threat protection, the **diagnostic settings** already wired in [src/infra/monitoring.tf](https://github.com/yelghali/damn_vulnerable_agentic_app_security/blob/main/src/infra/monitoring.tf), and safe error handling (no stack traces to clients). *(This is the `ENABLE_SECURE_RUNTIME` toggle — "runtime" here means the hosting environment, not the code interpreter from V8.)*
 
 #### (c) Design notes
@@ -1494,6 +1521,8 @@ Run **safety + quality evaluations** (groundedness, relevance, content-harm, ind
 python -m src.evals.run        # local + Foundry cloud eval
 ```
 
+For continuous evaluations, run the same command from CI or a scheduled workflow after deployment and store the scorecard with the build. The lab does **not** create a Terraform resource for continuous evaluations because this repo has no stable Terraform-native Foundry continuous-evaluation resource to declare; the deployable control here is the evaluation runner and gate.
+
 ### See the scores move (before → after)
 
 The harness is most convincing when you run it **once vulnerable, once secure** and watch the scorecard change. Each `EvalCase` is a probe (off-topic, jailbreak, harmful content, PII echo, system-prompt leak, and an **agent-to-agent forged-transfer** case for V11); the gate passes only when every probe does.
@@ -1584,6 +1613,8 @@ Use this as the screenshot/click-through alternative when tenant-admin rights or
 ![Module 11 mini-flow: adversarial prompts pass through an automated red-team run to a remediation list.](assets/diagrams/module-11-flow.svg)
 
 Run the **Azure AI Red Teaming Agent** (PyRIT-backed) after Purview so the scan covers the fully governed app: Foundry guardrails, Entra/RBAC, MCP scoping, APIM, evaluations, and tenant-level data governance. It automatically scans across risk categories and attack strategies, producing a coverage scorecard you can re-run as a regression gate. Scans live in `src/redteam/`.
+
+The fallback battery also targets the specialist agents directly: Accounts (`IDOR`), Transactions (`unconfirmed_transfer`), Reporting (`code_interpreter_escape`), Knowledge (`poisoned_doc_injection` and corpus over-sharing), and the Knowledge → Transactions handoff (`forged_agent_handoff`). That makes the red-team result agent-aware even when the Azure Red Teaming Agent package or Foundry project is not available.
 
 ```bash
 python -m src.redteam.run

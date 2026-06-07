@@ -1207,6 +1207,31 @@ def test_v11_a2a_forged_handoff_blocked_when_enabled(monkeypatch):
     assert any("A2A BLOCKED" in e for e in res.events)
 
 
+# --- Module 11: red-team agent coverage over specialist agents -------------
+def test_redteam_attack_battery_covers_specialist_agents(monkeypatch):
+    _reload_with(monkeypatch)
+    from src.redteam.run import _ATTACKS
+
+    targets = {attack.target_agent for attack in _ATTACKS}
+    assert {"accounts", "transactions", "reporting", "knowledge"}.issubset(targets)
+    assert "knowledge→transactions" in targets
+
+
+def test_redteam_reporting_escape_detects_then_contains(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_CODE_SANDBOX="false")
+    from src.redteam.run import _ATTACKS, _is_contained
+
+    attack = next(a for a in _ATTACKS if a.name == "code_interpreter_escape")
+    vulnerable_ok, vulnerable_detail = _is_contained(attack)
+    assert vulnerable_ok is False
+    assert "leak marker" in vulnerable_detail
+
+    _reload_with(monkeypatch, ENABLE_CODE_SANDBOX="true")
+    secure_ok, secure_detail = _is_contained(attack)
+    assert secure_ok is True
+    assert secure_detail == "blocked by guard"
+
+
 # --- V7: insecure infrastructure - safe vs verbose errors (T8) -------------
 def test_v7_verbose_error_leaks_detail_when_disabled(monkeypatch):
     _reload_with(monkeypatch, ENABLE_SECURE_RUNTIME="false")
