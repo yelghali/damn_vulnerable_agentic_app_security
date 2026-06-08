@@ -48,7 +48,7 @@ resource "azurerm_postgresql_flexible_server_active_directory_administrator" "en
   resource_group_name = azurerm_resource_group.rg.name
   tenant_id           = data.azurerm_client_config.current.tenant_id
   object_id           = coalesce(var.entra_admin_object_id, data.azurerm_client_config.current.object_id)
-  principal_name      = var.entra_admin_principal_name
+  principal_name      = var.entra_admin_principal_name != "" ? var.entra_admin_principal_name : "terraform-deployer"
   principal_type      = "User"
 }
 
