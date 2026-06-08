@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from functools import lru_cache
@@ -196,7 +197,7 @@ def compose_answer(system_prompt: str, user_message: str, context: str = "") -> 
         client = project.get_openai_client()
     try:
         completion = client.chat.completions.create(
-            model=settings.active_model_deployment,
+            model=random.choice(settings.active_model_deployments),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"{user_message}\n\nContext:\n{context}"},

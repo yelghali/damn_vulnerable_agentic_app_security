@@ -22,6 +22,28 @@ variable "model_version" {
   description = "Model version for the deployment."
 }
 
+variable "model_deployment_capacity" {
+  type        = number
+  default     = 20
+  description = "Capacity units per governed model deployment. Increase only if the subscription has quota."
+
+  validation {
+    condition     = var.model_deployment_capacity >= 1 && var.model_deployment_capacity <= 200
+    error_message = "model_deployment_capacity must be between 1 and 200."
+  }
+}
+
+variable "model_deployment_pool_size" {
+  type        = number
+  default     = 1
+  description = "Number of governed model deployments behind the shared app. Use 2-4 for classroom cohorts to reduce per-deployment rate limiting while keeping one shared Foundry project."
+
+  validation {
+    condition     = var.model_deployment_pool_size >= 1 && var.model_deployment_pool_size <= 10
+    error_message = "model_deployment_pool_size must be between 1 and 10."
+  }
+}
+
 variable "pg_admin_user" {
   type        = string
   default     = "zavaadmin"
@@ -100,7 +122,7 @@ variable "ai_gateway_tpm" {
 variable "enable_cohort_mode" {
   type        = bool
   default     = false
-  description = "Create a multi-user workshop cohort: per-user Foundry projects, optional per-user hosted apps, and per-user APIs on the shared APIM gateway. Shared AI Search, PostgreSQL, MCP, Key Vault, and monitoring stay singletons."
+  description = "Create a multi-user workshop cohort: generated user/customer metadata for shared AI Search/PostgreSQL/MCP/ACA infrastructure. Per-user Foundry projects, APIM APIs, and hosted apps are opt-in sandbox features."
 }
 
 variable "cohort_user_count" {
@@ -124,6 +146,18 @@ variable "deploy_cohort_apps" {
   type        = bool
   default     = false
   description = "When true with deploy_app=true and enable_cohort_mode=true, deploy one Zava Container App per generated lab user so each app points at that user's Foundry project while sharing Search/Postgres/MCP/APIM."
+}
+
+variable "deploy_cohort_foundry_projects" {
+  type        = bool
+  default     = false
+  description = "When true with enable_cohort_mode=true, create one Foundry project per generated lab user. Keep false for the default shared-infra cohort where users differ by Entra groups/data only."
+}
+
+variable "deploy_cohort_apim_apis" {
+  type        = bool
+  default     = false
+  description = "When true with deploy_apim=true and enable_cohort_mode=true, create per-user APIM API surfaces. Keep false for the default shared APIM gateway cohort."
 }
 
 variable "pg_sku_name" {

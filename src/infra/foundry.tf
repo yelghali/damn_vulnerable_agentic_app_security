@@ -121,8 +121,33 @@ resource "azurerm_cognitive_deployment" "governed" {
 
   sku {
     name     = "GlobalStandard"
-    capacity = 20
+    capacity = var.model_deployment_capacity
   }
+}
+
+resource "azurerm_cognitive_deployment" "governed_pool" {
+  for_each             = toset([for index in range(2, var.model_deployment_pool_size + 1) : format("gpt-governed-%02d", index)])
+  name                 = each.value
+  cognitive_account_id = azurerm_cognitive_account.ai.id
+  rai_policy_name      = var.secure_mode ? azapi_resource.rai_governed.name : null
+
+  model {
+    format  = "OpenAI"
+    name    = var.model_name
+    version = var.model_version
+  }
+
+  sku {
+    name     = "GlobalStandard"
+    capacity = var.model_deployment_capacity
+  }
+}
+
+locals {
+  governed_model_deployment_pool = concat(
+    [azurerm_cognitive_deployment.governed.name],
+    [for deployment in azurerm_cognitive_deployment.governed_pool : deployment.name]
+  )
 }
 
 # --- Custom RAI policy with filters OFF (simulates the ungoverned model) ------
@@ -172,7 +197,7 @@ resource "azurerm_cognitive_deployment" "ungoverned" {
 
   sku {
     name     = "GlobalStandard"
-    capacity = 20
+    capacity = var.model_deployment_capacity
   }
 }
 
@@ -199,12 +224,12 @@ resource "azapi_resource" "project" {
   schema_validation_enabled = false
 }
 
-# Optional cohort mode: one Foundry project per lab user so participants can
-# manipulate their own agents, prompts, and guardrails without stepping on each
-# other. Model deployments stay on the shared AIServices account to avoid quota
-# pressure; projects are the portal workspace boundary learners use.
+# Optional cohort sandbox mode: one Foundry project per lab user so participants
+# can manipulate their own agents, prompts, and guardrails without stepping on
+# each other. Default cohort deployments keep a single shared Foundry project and
+# vary learner access through Entra groups, PostgreSQL rows, and AI Search ACLs.
 resource "azapi_resource" "cohort_project" {
-  for_each  = local.cohort_user_map
+  for_each  = var.deploy_cohort_foundry_projects ? local.cohort_user_map : {}
   type      = "Microsoft.CognitiveServices/accounts/projects@2025-04-01-preview"
   name      = "proj-${local.base}-${each.value.compact_id}"
   parent_id = azurerm_cognitive_account.ai.id

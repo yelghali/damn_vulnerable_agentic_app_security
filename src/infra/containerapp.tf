@@ -268,6 +268,10 @@ resource "azurerm_container_app" "zava_app" {
         value = azurerm_cognitive_deployment.governed.name
       }
       env {
+        name  = "FOUNDRY_MODEL_DEPLOYMENT_POOL"
+        value = join(",", local.governed_model_deployment_pool)
+      }
+      env {
         name  = "FOUNDRY_UNGOVERNED_DEPLOYMENT"
         value = var.enable_ungoverned_model ? azurerm_cognitive_deployment.ungoverned[0].name : azurerm_cognitive_deployment.governed.name
       }
@@ -370,9 +374,9 @@ resource "azurerm_role_assignment" "app_to_search" {
   principal_id         = azurerm_container_app.zava_app[0].identity[0].principal_id
 }
 
-# Optional cohort mode: one browser-hosted app per generated lab user. This is
-# useful when each participant must edit their own Foundry project/agents while
-# sharing AI Search, PostgreSQL, MCP, and the APIM gateway.
+# Optional cohort app sandbox mode: one browser-hosted app per generated lab
+# user. Default cohort deployments use one shared app; per-user data/doc access
+# comes from Entra groups, PostgreSQL row ownership, and AI Search ACLs.
 resource "azurerm_container_app" "zava_user_app" {
   for_each                     = var.deploy_app && var.deploy_cohort_apps ? local.cohort_user_map : {}
   name                         = "ca-app-${local.base}-${each.value.safe_id}"
@@ -477,11 +481,15 @@ resource "azurerm_container_app" "zava_user_app" {
       }
       env {
         name  = "FOUNDRY_PROJECT_ENDPOINT"
-        value = "${azurerm_cognitive_account.ai.endpoint}api/projects/${azapi_resource.cohort_project[each.key].name}"
+        value = var.deploy_cohort_foundry_projects ? "${azurerm_cognitive_account.ai.endpoint}api/projects/${azapi_resource.cohort_project[each.key].name}" : "${azurerm_cognitive_account.ai.endpoint}api/projects/${azapi_resource.project.name}"
       }
       env {
         name  = "FOUNDRY_MODEL_DEPLOYMENT"
         value = azurerm_cognitive_deployment.governed.name
+      }
+      env {
+        name  = "FOUNDRY_MODEL_DEPLOYMENT_POOL"
+        value = join(",", local.governed_model_deployment_pool)
       }
       env {
         name  = "FOUNDRY_UNGOVERNED_DEPLOYMENT"
@@ -528,7 +536,7 @@ resource "azurerm_container_app" "zava_user_app" {
       }
       env {
         name  = "AI_GATEWAY_URL"
-        value = var.deploy_apim ? "${azurerm_api_management.gw[0].gateway_url}/${each.value.safe_id}" : ""
+        value = var.deploy_apim && var.deploy_cohort_apim_apis ? "${azurerm_api_management.gw[0].gateway_url}/${each.value.safe_id}" : (var.deploy_apim ? azurerm_api_management.gw[0].gateway_url : "")
       }
       env {
         name  = "VULNERABLE_APP_URL"

@@ -29,6 +29,11 @@ output "model_deployment_governed" {
   value = azurerm_cognitive_deployment.governed.name
 }
 
+output "model_deployment_governed_pool" {
+  value       = local.governed_model_deployment_pool
+  description = "Governed deployment names used by the shared app for cohort load distribution."
+}
+
 output "model_deployment_ungoverned" {
   description = "V1 simulated-unsafe deployment (content filters off). Falls back to the governed deployment when enable_ungoverned_model = false (restricted subscriptions)."
   value       = var.enable_ungoverned_model ? azurerm_cognitive_deployment.ungoverned[0].name : azurerm_cognitive_deployment.governed.name
@@ -80,14 +85,14 @@ output "local_model_endpoint" {
 }
 
 output "cohort_users" {
-  description = "Generated lab users and their per-user Foundry project/APIM/app coordinates when enable_cohort_mode=true."
+  description = "Generated lab users and their shared-infra or optional per-user sandbox coordinates when enable_cohort_mode=true."
   value = {
     for user_id, user in local.cohort_user_map : user_id => {
       customer_id              = user.customer_id
-      foundry_project_name     = try(azapi_resource.cohort_project[user_id].name, "")
-      foundry_project_endpoint = try("${azurerm_cognitive_account.ai.endpoint}api/projects/${azapi_resource.cohort_project[user_id].name}", "")
-      apim_gateway_base_path   = var.deploy_apim ? "/${user.safe_id}" : ""
-      apim_openai_path         = var.deploy_apim ? "/${user.safe_id}/openai" : ""
+      foundry_project_name     = try(azapi_resource.cohort_project[user_id].name, azapi_resource.project.name)
+      foundry_project_endpoint = try("${azurerm_cognitive_account.ai.endpoint}api/projects/${azapi_resource.cohort_project[user_id].name}", "${azurerm_cognitive_account.ai.endpoint}api/projects/${azapi_resource.project.name}")
+      apim_gateway_base_path   = var.deploy_apim && var.deploy_cohort_apim_apis ? "/${user.safe_id}" : ""
+      apim_openai_path         = var.deploy_apim && var.deploy_cohort_apim_apis ? "/${user.safe_id}/openai" : ""
       app_url                  = var.deploy_app && var.deploy_cohort_apps ? "https://${azurerm_container_app.zava_user_app[user_id].ingress[0].fqdn}" : ""
       retail_group_name        = user.retail_group
       private_group_name       = user.private_group

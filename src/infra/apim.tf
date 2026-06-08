@@ -112,7 +112,7 @@ resource "azurerm_api_management_api_diagnostic" "aoai_appi" {
 }
 
 resource "azurerm_api_management_api_diagnostic" "cohort_aoai_appi" {
-  for_each                  = var.deploy_apim ? local.cohort_user_map : {}
+  for_each                  = var.deploy_apim && var.deploy_cohort_apim_apis ? local.cohort_user_map : {}
   identifier                = "applicationinsights"
   resource_group_name       = azurerm_resource_group.rg.name
   api_management_name       = azurerm_api_management.gw[0].name
@@ -229,11 +229,11 @@ resource "azurerm_api_management_api_policy" "aoai" {
 XML
 }
 
-# Optional cohort mode: keep one shared APIM service, but create a separate API
-# surface per lab user. Each participant can safely edit their own API policy
-# (rate limits, auth, logging) without changing another user's route.
+# Optional cohort APIM sandbox mode: keep one shared APIM service, but create a
+# separate API surface per lab user. Default cohort deployments use the shared
+# APIM API and vary access by identity/data groups instead.
 resource "azurerm_api_management_api" "cohort_aoai" {
-  for_each              = var.deploy_apim ? local.cohort_user_map : {}
+  for_each              = var.deploy_apim && var.deploy_cohort_apim_apis ? local.cohort_user_map : {}
   name                  = "azure-openai-${each.value.safe_id}"
   api_management_name   = azurerm_api_management.gw[0].name
   resource_group_name   = azurerm_resource_group.rg.name
@@ -245,7 +245,7 @@ resource "azurerm_api_management_api" "cohort_aoai" {
 }
 
 resource "azurerm_api_management_api_operation" "cohort_chat_completions" {
-  for_each            = var.deploy_apim ? local.cohort_user_map : {}
+  for_each            = var.deploy_apim && var.deploy_cohort_apim_apis ? local.cohort_user_map : {}
   operation_id        = "chat-completions"
   api_name            = azurerm_api_management_api.cohort_aoai[each.key].name
   api_management_name = azurerm_api_management.gw[0].name
@@ -272,7 +272,7 @@ resource "azurerm_api_management_api_operation" "cohort_chat_completions" {
 }
 
 resource "azurerm_api_management_api_policy" "cohort_aoai" {
-  for_each            = var.deploy_apim ? local.cohort_user_map : {}
+  for_each            = var.deploy_apim && var.deploy_cohort_apim_apis ? local.cohort_user_map : {}
   api_name            = azurerm_api_management_api.cohort_aoai[each.key].name
   api_management_name = azurerm_api_management.gw[0].name
   resource_group_name = azurerm_resource_group.rg.name

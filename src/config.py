@@ -106,6 +106,7 @@ class Settings(BaseSettings):
     foundry_project_endpoint: str = Field(default="", alias="FOUNDRY_PROJECT_ENDPOINT")
     foundry_model_name: str = Field(default="", alias="FOUNDRY_MODEL_NAME")
     foundry_model_deployment: str = Field(default="gpt-4.1-mini", alias="FOUNDRY_MODEL_DEPLOYMENT")
+    foundry_model_deployment_pool: str = Field(default="", alias="FOUNDRY_MODEL_DEPLOYMENT_POOL")
     foundry_ungoverned_deployment: str = Field(
         default="gpt-4.1-mini-nofilter", alias="FOUNDRY_UNGOVERNED_DEPLOYMENT"
     )
@@ -193,6 +194,17 @@ class Settings(BaseSettings):
             else self.foundry_ungoverned_deployment
         )
 
+    @property
+    def active_model_deployments(self) -> list[str]:
+        if not self.enable_content_safety:
+            return [self.foundry_ungoverned_deployment]
+        deployments = [
+            deployment.strip()
+            for deployment in self.foundry_model_deployment_pool.split(",")
+            if deployment.strip()
+        ]
+        return deployments or [self.foundry_model_deployment]
+
     def category_threshold(self, category: str) -> int:
         """Severity threshold for one Azure harm category (hate / sexual /
         violence / self_harm). Returns the per-category override if set, else
@@ -221,6 +233,7 @@ class Settings(BaseSettings):
             "runtime_toggles_enabled": self.enable_runtime_toggles,
             "model_backend": "foundry-local/openai-compatible" if self.offline_mode else "azure-ai-foundry",
             "model_label": model_label,
+            "model_deployment_pool": self.active_model_deployments,
             "data_backend": data_backend,
             "cohort_user_count": self.cohort_user_count,
             "cohort_user_prefix": self.cohort_user_prefix,
