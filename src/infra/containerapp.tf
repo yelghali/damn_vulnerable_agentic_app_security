@@ -354,14 +354,14 @@ resource "azurerm_container_app" "zava_app" {
 }
 
 resource "azurerm_role_assignment" "app_to_foundry" {
-  count                = var.deploy_app && !var.app_offline_mode ? 1 : 0
+  count                = var.deploy_app ? 1 : 0
   scope                = azurerm_cognitive_account.ai.id
   role_definition_name = "Cognitive Services OpenAI User"
   principal_id         = azurerm_container_app.zava_app[0].identity[0].principal_id
 }
 
 resource "azurerm_role_assignment" "app_to_ai_services" {
-  count                = var.deploy_app && !var.app_offline_mode ? 1 : 0
+  count                = var.deploy_app ? 1 : 0
   scope                = azurerm_cognitive_account.ai.id
   role_definition_name = "Cognitive Services User"
   principal_id         = azurerm_container_app.zava_app[0].identity[0].principal_id
@@ -578,14 +578,14 @@ resource "azurerm_container_app" "zava_user_app" {
 }
 
 resource "azurerm_role_assignment" "cohort_app_to_foundry" {
-  for_each             = var.deploy_app && var.deploy_cohort_apps && !var.app_offline_mode ? local.cohort_user_map : {}
+  for_each             = var.deploy_app && var.deploy_cohort_apps ? local.cohort_user_map : {}
   scope                = azurerm_cognitive_account.ai.id
   role_definition_name = "Cognitive Services OpenAI User"
   principal_id         = azurerm_container_app.zava_user_app[each.key].identity[0].principal_id
 }
 
 resource "azurerm_role_assignment" "cohort_app_to_ai_services" {
-  for_each             = var.deploy_app && var.deploy_cohort_apps && !var.app_offline_mode ? local.cohort_user_map : {}
+  for_each             = var.deploy_app && var.deploy_cohort_apps ? local.cohort_user_map : {}
   scope                = azurerm_cognitive_account.ai.id
   role_definition_name = "Cognitive Services User"
   principal_id         = azurerm_container_app.zava_user_app[each.key].identity[0].principal_id

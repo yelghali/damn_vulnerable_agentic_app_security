@@ -14,7 +14,7 @@ locals {
   base = "${var.prefix}${random_string.suffix.result}"
 
   deploy_container_apps     = var.deploy_mcp_toolbox || var.deploy_app
-  deploy_hosted_local_model = var.deploy_app && var.app_offline_mode && var.deploy_vulnerable_local_model && var.local_model_endpoint == ""
+  deploy_hosted_local_model = var.deploy_app && var.deploy_vulnerable_local_model && var.local_model_endpoint == ""
 
   cohort_user_ids = var.enable_cohort_mode ? [
     for i in range(1, var.cohort_user_count + 1) : "${var.cohort_user_prefix}_${i}"
