@@ -232,6 +232,26 @@ resource "azurerm_container_app" "zava_app" {
         value = tostring(var.app_enable_runtime_toggles)
       }
       env {
+        name  = "COHORT_USER_COUNT"
+        value = tostring(var.cohort_user_count)
+      }
+      env {
+        name  = "COHORT_USER_PREFIX"
+        value = var.cohort_user_prefix
+      }
+      env {
+        name  = "AZURE_TENANT_ID"
+        value = data.azurerm_client_config.current.tenant_id
+      }
+      env {
+        name  = "ENTRA_API_CLIENT_ID"
+        value = var.app_entra_client_id
+      }
+      env {
+        name  = "ENTRA_REDIRECT_URI"
+        value = var.app_entra_redirect_uri
+      }
+      env {
         name  = "LOCAL_MODEL_ENDPOINT"
         value = local.deploy_hosted_local_model ? "https://${azurerm_container_app.local_model[0].ingress[0].fqdn}/v1" : var.local_model_endpoint
       }
@@ -426,6 +446,26 @@ resource "azurerm_container_app" "zava_user_app" {
       env {
         name  = "ENABLE_RUNTIME_TOGGLES"
         value = tostring(var.app_enable_runtime_toggles)
+      }
+      env {
+        name  = "COHORT_USER_COUNT"
+        value = tostring(var.cohort_user_count)
+      }
+      env {
+        name  = "COHORT_USER_PREFIX"
+        value = var.cohort_user_prefix
+      }
+      env {
+        name  = "AZURE_TENANT_ID"
+        value = data.azurerm_client_config.current.tenant_id
+      }
+      env {
+        name  = "ENTRA_API_CLIENT_ID"
+        value = var.app_entra_client_id
+      }
+      env {
+        name  = "ENTRA_REDIRECT_URI"
+        value = var.app_entra_redirect_uri
       }
       env {
         name  = "LOCAL_MODEL_ENDPOINT"

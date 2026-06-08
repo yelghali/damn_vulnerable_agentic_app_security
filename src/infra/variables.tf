@@ -205,6 +205,18 @@ variable "app_enable_runtime_toggles" {
   description = "Expose runtime lab toggles in the hosted app. Use true only for instructor validation or trusted lab sandboxes; paired app URLs are preferred for public learner deployments."
 }
 
+variable "app_entra_client_id" {
+  type        = string
+  default     = ""
+  description = "Optional Entra application client ID for hosted app sign-in. Usually emitted by setup_entra_local_auth.py after the app URL is known."
+}
+
+variable "app_entra_redirect_uri" {
+  type        = string
+  default     = ""
+  description = "Optional Entra redirect URI for hosted app sign-in, e.g. https://<app>/auth/callback."
+}
+
 variable "deploy_vulnerable_local_model" {
   type        = bool
   default     = true
