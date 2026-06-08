@@ -39,8 +39,8 @@ variable "model_deployment_pool_size" {
   description = "Number of governed model deployments behind the shared app. Use 2-4 for classroom cohorts to reduce per-deployment rate limiting while keeping one shared Foundry project."
 
   validation {
-    condition     = var.model_deployment_pool_size >= 1 && var.model_deployment_pool_size <= 10
-    error_message = "model_deployment_pool_size must be between 1 and 10."
+    condition     = var.model_deployment_pool_size >= 1 && var.model_deployment_pool_size <= 4
+    error_message = "model_deployment_pool_size must be between 1 and 4."
   }
 }
 

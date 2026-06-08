@@ -125,9 +125,9 @@ resource "azurerm_cognitive_deployment" "governed" {
   }
 }
 
-resource "azurerm_cognitive_deployment" "governed_pool" {
-  for_each             = toset([for index in range(2, var.model_deployment_pool_size + 1) : format("gpt-governed-%02d", index)])
-  name                 = each.value
+resource "azurerm_cognitive_deployment" "governed_pool_02" {
+  count                = var.model_deployment_pool_size >= 2 ? 1 : 0
+  name                 = "gpt-governed-02"
   cognitive_account_id = azurerm_cognitive_account.ai.id
   rai_policy_name      = var.secure_mode ? azapi_resource.rai_governed.name : null
 
@@ -141,12 +141,56 @@ resource "azurerm_cognitive_deployment" "governed_pool" {
     name     = "GlobalStandard"
     capacity = var.model_deployment_capacity
   }
+
+  depends_on = [azurerm_cognitive_deployment.governed]
+}
+
+resource "azurerm_cognitive_deployment" "governed_pool_03" {
+  count                = var.model_deployment_pool_size >= 3 ? 1 : 0
+  name                 = "gpt-governed-03"
+  cognitive_account_id = azurerm_cognitive_account.ai.id
+  rai_policy_name      = var.secure_mode ? azapi_resource.rai_governed.name : null
+
+  model {
+    format  = "OpenAI"
+    name    = var.model_name
+    version = var.model_version
+  }
+
+  sku {
+    name     = "GlobalStandard"
+    capacity = var.model_deployment_capacity
+  }
+
+  depends_on = [azurerm_cognitive_deployment.governed_pool_02]
+}
+
+resource "azurerm_cognitive_deployment" "governed_pool_04" {
+  count                = var.model_deployment_pool_size >= 4 ? 1 : 0
+  name                 = "gpt-governed-04"
+  cognitive_account_id = azurerm_cognitive_account.ai.id
+  rai_policy_name      = var.secure_mode ? azapi_resource.rai_governed.name : null
+
+  model {
+    format  = "OpenAI"
+    name    = var.model_name
+    version = var.model_version
+  }
+
+  sku {
+    name     = "GlobalStandard"
+    capacity = var.model_deployment_capacity
+  }
+
+  depends_on = [azurerm_cognitive_deployment.governed_pool_03]
 }
 
 locals {
   governed_model_deployment_pool = concat(
     [azurerm_cognitive_deployment.governed.name],
-    [for deployment in azurerm_cognitive_deployment.governed_pool : deployment.name]
+    [for deployment in azurerm_cognitive_deployment.governed_pool_02 : deployment.name],
+    [for deployment in azurerm_cognitive_deployment.governed_pool_03 : deployment.name],
+    [for deployment in azurerm_cognitive_deployment.governed_pool_04 : deployment.name]
   )
 }
 
