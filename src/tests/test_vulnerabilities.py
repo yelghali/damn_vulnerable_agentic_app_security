@@ -36,6 +36,7 @@ def _reload_with(monkeypatch: pytest.MonkeyPatch, **env: str):
         "COHORT_USER_COUNT", "COHORT_USER_PREFIX",
         "CONTENT_SAFETY_ENDPOINT", "CONTENT_SAFETY_KEY", "LANGUAGE_ENDPOINT",
         "LANGUAGE_KEY", "SEARCH_ENDPOINT", "SEARCH_KEY",
+        "AZURE_TENANT_ID", "ENTRA_API_CLIENT_ID", "ENTRA_REDIRECT_URI",
         "CONTENT_SAFETY_SEVERITY_THRESHOLD", "CONTENT_SAFETY_BLOCK_OFF_TOPIC",
         "CONTENT_SAFETY_THRESHOLD_HATE", "CONTENT_SAFETY_THRESHOLD_SEXUAL",
         "CONTENT_SAFETY_THRESHOLD_VIOLENCE", "CONTENT_SAFETY_THRESHOLD_SELF_HARM",
@@ -278,6 +279,52 @@ def test_runtime_lab_toggles_can_iterate_controls(monkeypatch):
     reset = client.post("/api/config/toggles", json={"reset": True}).json()
     assert reset["secure_mode"] is False
     assert reset["content_safety"] is False
+
+
+def test_hosted_runtime_toggles_require_zava_manager(monkeypatch):
+    _reload_with(monkeypatch, SECURE_MODE="false", ENABLE_RUNTIME_TOGGLES="true")
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    client = TestClient(app)
+
+    learner_principal = {
+        "userDetails": "user_1@example.onmicrosoft.com",
+        "userId": "00000000-0000-0000-0000-000000000001",
+        "claims": [{"typ": "roles", "val": "retail-customers"}],
+    }
+    manager_principal = {
+        "userDetails": "zava_manager@example.onmicrosoft.com",
+        "userId": "00000000-0000-0000-0000-000000000003",
+        "claims": [
+            {"typ": "roles", "val": "retail-customers"},
+            {"typ": "roles", "val": "private-client"},
+            {"typ": "roles", "val": "zava-managers"},
+        ],
+    }
+
+    monkeypatch.setattr("src.app.main._is_local_lab_request", lambda request: False)
+
+    anonymous_config = client.get("/api/config").json()
+    assert anonymous_config["runtime_toggles_allowed"] is False
+    assert "Sign in as zava_manager" in anonymous_config["toggle_lock_reason"]
+    anonymous_toggle = client.post("/api/config/toggles", json={"secure_mode": True})
+    assert anonymous_toggle.status_code == 403
+
+    learner_headers = {"x-ms-client-principal": _b64_json(learner_principal)}
+    learner_config = client.get("/api/config", headers=learner_headers).json()
+    assert learner_config["runtime_toggles_allowed"] is False
+    assert "only zava_manager" in learner_config["toggle_lock_reason"]
+    learner_toggle = client.post("/api/config/toggles", headers=learner_headers, json={"secure_mode": True})
+    assert learner_toggle.status_code == 403
+
+    manager_headers = {"x-ms-client-principal": _b64_json(manager_principal)}
+    manager_config = client.get("/api/config", headers=manager_headers).json()
+    assert manager_config["runtime_toggles_allowed"] is True
+    assert "unlocked" in manager_config["toggle_lock_reason"]
+    manager_toggle = client.post("/api/config/toggles", headers=manager_headers, json={"secure_mode": True}).json()
+    assert manager_toggle["secure_mode"] is True
+    assert manager_toggle["runtime_toggles_allowed"] is True
 
 
 def test_agent_governance_posture_gate_tracks_runtime_controls(monkeypatch):

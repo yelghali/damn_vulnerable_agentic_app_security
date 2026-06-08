@@ -473,6 +473,12 @@ async function loadPosture() {
   modeHint.className = "hint";
   modeHint.textContent = "Some controls need Azure wiring to prove the secure path: V3 PII uses Azure Language, V5 auth uses Entra sign-in, V5 doc security uses Azure AI Search, and V9 chat uses MCP only when USE_MCP_TOOLS=true. M7 turns on the local agent/tool governance set covering V4/V8/V9/V11.";
   box.appendChild(modeHint);
+  if (cfg.toggle_lock_reason) {
+    const lockHint = document.createElement("div");
+    lockHint.className = "hint";
+    lockHint.textContent = cfg.toggle_lock_reason;
+    box.appendChild(lockHint);
+  }
   for (const [key, label] of Object.entries(TOGGLE_LABELS)) {
     const on = !!cfg[key];
     const row = document.createElement("div");
@@ -511,7 +517,7 @@ function renderToggleActions(cfg) {
   const actions = $("toggle-actions");
   if (!actions) return;
   if (!cfg.runtime_toggles_allowed) {
-    actions.innerHTML = `<div class="hint">Runtime lab toggles are disabled for this host. Set <code>ENABLE_RUNTIME_TOGGLES=true</code> for hosted workshop demos.</div>`;
+    actions.innerHTML = `<div class="hint">${cfg.toggle_lock_reason || "Security controls are locked for this shared app."}</div>`;
     return;
   }
   actions.innerHTML = "";

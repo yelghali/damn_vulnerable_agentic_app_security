@@ -347,15 +347,48 @@ def governance_posture() -> GovernancePosture:
     )
 
 
-def _runtime_toggles_allowed(request: Request) -> bool:
+def _is_local_lab_request(request: Request) -> bool:
     settings = get_settings()
+    if settings.azure_tenant_id:
+        return False
     host = request.client.host if request.client else ""
-    return settings.enable_runtime_toggles or host in {"127.0.0.1", "::1", "localhost", "testclient"}
+    return host in {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+def _can_manage_runtime_toggles(request: Request) -> bool:
+    settings = get_settings()
+    if _is_local_lab_request(request):
+        return True
+    if not settings.enable_runtime_toggles:
+        return False
+    identity = _identity_from_request(request)
+    return identity.authenticated and "zava-managers" in identity.zava_groups
+
+
+def _toggle_lock_reason(request: Request) -> str:
+    settings = get_settings()
+    if _is_local_lab_request(request):
+        return "Local lab host: controls are unlocked for single-user experimentation."
+    if not settings.enable_runtime_toggles:
+        return "Runtime lab toggles are disabled for this host."
+    identity = _identity_from_request(request)
+    if not identity.authenticated:
+        return "Sign in as zava_manager to change shared Azure security controls."
+    if "zava-managers" not in identity.zava_groups:
+        return "Security controls are shared for this app; only zava_manager can change them."
+    return "Signed in as zava_manager: shared security controls are unlocked."
+
+
+def _runtime_toggles_allowed(request: Request) -> bool:
+    return _can_manage_runtime_toggles(request)
 
 
 def _config_summary(request: Request) -> dict:
     summary = get_settings().summary()
-    summary["runtime_toggles_allowed"] = _runtime_toggles_allowed(request)
+    can_toggle = _can_manage_runtime_toggles(request)
+    summary["runtime_toggles_allowed"] = can_toggle
+    summary["can_toggle_controls"] = can_toggle
+    summary["toggle_lock_reason"] = _toggle_lock_reason(request)
     summary["security_controls"] = list(SECURITY_CONTROLS)
     return summary
 
@@ -421,7 +454,7 @@ def update_toggles(req: ToggleRequest, request: Request) -> dict:
     if not _runtime_toggles_allowed(request):
         raise HTTPException(
             status_code=403,
-            detail="Runtime lab toggles are disabled for this host. Set ENABLE_RUNTIME_TOGGLES=true to allow them.",
+            detail=_toggle_lock_reason(request),
         )
     if req.reset:
         get_settings.cache_clear()
