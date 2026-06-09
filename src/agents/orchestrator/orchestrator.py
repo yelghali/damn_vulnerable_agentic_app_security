@@ -65,7 +65,13 @@ def _route(message: str) -> str:
         return "reporting"
     if any(k in low for k in ("document", "policy", "disclosure", "fee", "interest", "terms", "rate")):
         return "knowledge"
-    if any(k in low for k in ("account", "balance", "transaction", "credit", "score")):
+    if any(
+        k in low
+        for k in (
+            "account", "balance", "transaction", "credit", "score",
+            "ssn", "social security", "profile", "personal", "address", "full name",
+        )
+    ):
         return "accounts"
     return "orchestrator"
 

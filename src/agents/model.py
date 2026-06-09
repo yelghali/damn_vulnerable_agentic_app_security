@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 import os
 import random
+import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from functools import lru_cache
@@ -39,6 +40,28 @@ _AOAI_API_VERSION = "2024-10-21"
 
 class ModelSafetyBlocked(RuntimeError):
     """Raised when the Azure Foundry deployment blocks a model request."""
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    status_code = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    if status_code == 429:
+        return True
+    body = getattr(exc, "body", None)
+    error = body.get("error", {}) if isinstance(body, dict) else {}
+    code = str(error.get("code") or getattr(exc, "code", "")).lower()
+    text = str(exc).lower()
+    return any(
+        marker in code or marker in text
+        for marker in ("429", "rate_limit", "ratelimit", "too_many_requests", "too many requests")
+    )
+
+
+def _rate_limited_answer(deployments: list[str]) -> str:
+    return (
+        "The Azure AI model pool is busy right now. I retried all configured "
+        f"deployments ({', '.join(deployments)}) and waited for capacity to free up. "
+        "Please retry in a moment; the request was not processed."
+    )
 
 
 def _raise_if_content_filter(exc: Exception) -> None:
@@ -112,6 +135,48 @@ def _local_client() -> tuple[object, str] | None:
     return None
 
 
+def _call_foundry_with_pool(client: object, system_prompt: str, user_message: str, context: str) -> str:
+    settings = get_settings()
+    deployments = list(settings.active_model_deployments)
+    max_rounds = max(1, settings.foundry_rate_limit_retry_rounds + 1)
+
+    last_rate_limit: Exception | None = None
+    for round_index in range(max_rounds):
+        attempt_order = deployments[:]
+        random.shuffle(attempt_order)
+        for deployment in attempt_order:
+            try:
+                completion = client.chat.completions.create(  # type: ignore[attr-defined]
+                    model=deployment,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": f"{user_message}\n\nContext:\n{context}"},
+                    ],
+                )
+                return completion.choices[0].message.content or ""
+            except Exception as exc:
+                _raise_if_content_filter(exc)
+                if not _is_rate_limit_error(exc):
+                    raise
+                last_rate_limit = exc
+                logger.warning("model: deployment %s rate-limited; trying next deployment", deployment)
+
+        if round_index < max_rounds - 1:
+            wait_seconds = settings.foundry_rate_limit_backoff_seconds * (round_index + 1)
+            logger.warning(
+                "model: all deployments rate-limited; waiting %.1fs before retry round %d/%d",
+                wait_seconds,
+                round_index + 2,
+                max_rounds,
+            )
+            time.sleep(wait_seconds)
+
+    if last_rate_limit is not None:
+        logger.error("model: all deployments remained rate-limited after %d rounds", max_rounds)
+        return _rate_limited_answer(deployments)
+    raise RuntimeError("No Azure AI Foundry model deployments are configured.")
+
+
 def _call_local_slm(system_prompt: str, user_message: str, context: str) -> str | None:
     """Call the local SLM; return ``None`` when no real model is available."""
     built = _local_client()
@@ -135,22 +200,34 @@ def _call_local_slm(system_prompt: str, user_message: str, context: str) -> str 
         return None
 
 
+def _call_local_slm_with_timeout(system_prompt: str, user_message: str, context: str) -> str | None:
+    settings = get_settings()
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        return executor.submit(_call_local_slm, system_prompt, user_message, context).result(
+            timeout=settings.local_model_timeout_seconds
+        )
+    except FutureTimeoutError:
+        logger.warning("model: local model path timed out after %.1fs", settings.local_model_timeout_seconds)
+        return None
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
 def compose_answer(system_prompt: str, user_message: str, context: str = "") -> str:
     settings = get_settings()
 
-    if settings.offline_mode:
-        executor = ThreadPoolExecutor(max_workers=1)
-        try:
-            answer = executor.submit(_call_local_slm, system_prompt, user_message, context).result(
-                timeout=settings.local_model_timeout_seconds
-            )
-        except FutureTimeoutError:
-            logger.warning("model: local model path timed out after %.1fs", settings.local_model_timeout_seconds)
-            answer = None
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
+    use_vulnerable_local_model = not settings.enable_content_safety and bool(settings.local_model_endpoint)
+    if settings.offline_mode or use_vulnerable_local_model:
+        answer = _call_local_slm_with_timeout(system_prompt, user_message, context)
         if answer is not None:
             return answer
+        if use_vulnerable_local_model:
+            raise RuntimeError(
+                "Vulnerable baseline mode requires the local unguarded model endpoint, "
+                "but LOCAL_MODEL_ENDPOINT is not reachable. Refusing to fall back to a "
+                "governed Foundry deployment for the baseline prompts."
+            )
         raise RuntimeError(
             "No real local model is reachable. Start Microsoft Foundry Local "
             f"(`foundry model run {settings.local_model_name}`) or set "
@@ -195,15 +272,4 @@ def compose_answer(system_prompt: str, user_message: str, context: str = "") -> 
             credential=credential,
         )
         client = project.get_openai_client()
-    try:
-        completion = client.chat.completions.create(
-            model=random.choice(settings.active_model_deployments),
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"{user_message}\n\nContext:\n{context}"},
-            ],
-        )
-    except Exception as exc:
-        _raise_if_content_filter(exc)
-        raise
-    return completion.choices[0].message.content or ""
+    return _call_foundry_with_pool(client, system_prompt, user_message, context)

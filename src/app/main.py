@@ -22,9 +22,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
+import jwt
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from jwt import PyJWKClient
 from pydantic import BaseModel, Field
 
 from src.agents.gateway import GatewayError, reset_gateway_budget, route_call
@@ -42,6 +44,7 @@ _STATIC = Path(__file__).resolve().parent / "static"
 _AUTH_COOKIE = "zava_local_auth"
 _AUTH_FLOW_COOKIE = "zava_local_auth_flow"
 _AUTH_COOKIE_MAX_AGE = 8 * 60 * 60
+_JWKS_CLIENTS: dict[str, PyJWKClient] = {}
 
 
 class ChatRequest(BaseModel):
@@ -168,6 +171,30 @@ def _jwt_details(token: str | None) -> tuple[dict[str, Any] | None, dict[str, An
     return _decode_jwt_part(header), _decode_jwt_part(payload)
 
 
+def _validated_entra_jwt_details(token: str | None) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    settings = get_settings()
+    if not token or token.count(".") < 2:
+        return None, None
+    if not settings.azure_tenant_id or not settings.entra_api_client_id:
+        return _jwt_details(token)
+    try:
+        jwks_url = f"https://login.microsoftonline.com/{settings.azure_tenant_id}/discovery/v2.0/keys"
+        client = _JWKS_CLIENTS.setdefault(jwks_url, PyJWKClient(jwks_url))
+        signing_key = client.get_signing_key_from_jwt(token)
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=settings.entra_api_client_id,
+            issuer=f"https://login.microsoftonline.com/{settings.azure_tenant_id}/v2.0",
+            leeway=60,
+        )
+        return jwt.get_unverified_header(token), payload
+    except Exception as exc:  # noqa: BLE001 - invalid optional auth cookie
+        logging.warning("Ignoring invalid Entra local-login token: %s", exc)
+        return None, None
+
+
 def _customer_from_user_id(user_id: str | None, default_customer_id: str) -> str:
     if user_id and user_id.startswith("user_"):
         try:
@@ -238,13 +265,15 @@ def _access_summary(authenticated: bool, customer_id: str | None, zava_groups: l
 def _identity_from_request(request: Request, req: ChatRequest | None = None, include_token: bool = False) -> IdentityInfo:
     settings = get_settings()
     headers = request.headers
-    principal_name = headers.get("x-ms-client-principal-name")
-    principal_id = headers.get("x-ms-client-principal-id")
+    principal_name: str | None = None
+    principal_id: str | None = None
     groups: list[str] = []
     source = "client-supplied"
 
     encoded_principal = headers.get("x-ms-client-principal")
-    if encoded_principal:
+    if encoded_principal and settings.trust_easyauth_headers:
+        principal_name = headers.get("x-ms-client-principal-name")
+        principal_id = headers.get("x-ms-client-principal-id")
         principal = _decode_base64_json(encoded_principal) or {}
         principal_name = principal_name or principal.get("userDetails")
         principal_id = principal_id or principal.get("userId")
@@ -256,16 +285,24 @@ def _identity_from_request(request: Request, req: ChatRequest | None = None, inc
                 groups.append(value)
 
     local_auth = _decode_cookie_json(request.cookies.get(_AUTH_COOKIE)) or {}
-    token = (
-        headers.get("x-ms-token-aad-access-token")
-        or headers.get("authorization", "").removeprefix("Bearer ")
-        or local_auth.get("id_token")
-    )
-    token_header, token_payload = _jwt_details(token)
+    token = local_auth.get("id_token")
+    if token:
+        source = "entra-local-login"
+    elif settings.trust_easyauth_headers:
+        token = headers.get("x-ms-token-aad-access-token")
+    elif not settings.azure_tenant_id:
+        token = headers.get("authorization", "").removeprefix("Bearer ")
+    if source == "entra-local-login":
+        token_header, token_payload = _validated_entra_jwt_details(token)
+        if not token_payload:
+            token = None
+            source = "client-supplied"
+    else:
+        token_header, token_payload = _jwt_details(token)
     if token_payload:
         principal_name = principal_name or token_payload.get("preferred_username") or token_payload.get("upn") or token_payload.get("email")
         principal_id = principal_id or token_payload.get("oid") or token_payload.get("sub")
-        source = "entra-local-login" if local_auth else ("jwt" if source == "client-supplied" else source)
+        source = source if source != "client-supplied" else "jwt"
         token_groups = token_payload.get("groups") or token_payload.get("roles") or []
         if isinstance(token_groups, str):
             groups.append(token_groups)
@@ -299,6 +336,30 @@ def _identity_from_request(request: Request, req: ChatRequest | None = None, inc
         token_payload=token_payload if include_token else None,
         access=_access_summary(bool(principal_name or principal_id or token_payload), customer_id, zava_groups),
     )
+
+
+def _spoofing_events(req: ChatRequest, identity: IdentityInfo, enforced_customer_id: str | None) -> list[str]:
+    settings = get_settings()
+    supplied_customer_id = (req.customer_id or "").strip()
+    if settings.enable_obo:
+        if not identity.authenticated:
+            if supplied_customer_id:
+                return [
+                    f"identity: client sent customer_id '{supplied_customer_id}', but secure OBO requires a validated Entra principal",
+                    "identity: spoof rejected - request body identity is not trusted",
+                ]
+            return []
+        if supplied_customer_id and supplied_customer_id != enforced_customer_id:
+            return [
+                f"identity: spoof detected - client sent customer_id '{supplied_customer_id}'",
+                f"identity: resolved by OBO - using signed-in Entra customer '{enforced_customer_id}'",
+            ]
+        return [f"identity: OBO enforced - using signed-in Entra customer '{enforced_customer_id}'"]
+    if supplied_customer_id:
+        return [
+            f"identity: vulnerable baseline - no spoofing detection; trusted client-supplied customer_id '{supplied_customer_id}'",
+        ]
+    return [f"identity: vulnerable baseline - using default customer_id '{enforced_customer_id}'"]
 
 
 @app.get("/api/config")
@@ -351,8 +412,8 @@ def _is_local_lab_request(request: Request) -> bool:
     settings = get_settings()
     if settings.azure_tenant_id:
         return False
-    host = request.client.host if request.client else ""
-    return host in {"127.0.0.1", "::1", "localhost", "testclient"}
+    host = (request.url.hostname or "").lower()
+    return host in {"127.0.0.1", "::1", "localhost", "testserver"}
 
 
 def _can_manage_runtime_toggles(request: Request) -> bool:
@@ -413,6 +474,21 @@ def _knowledge_docs_response(req: ChatRequest, request: Request) -> ChatResponse
             sources=[],
         )
     groups = identity.zava_groups or identity.groups or req.groups
+    if settings.enable_doc_security and "zava-managers" not in groups:
+        return ChatResponse(
+            answer=(
+                "Knowledge corpus enumeration is restricted when AI Search document-level security is on. "
+                "Ask for a specific topic instead; Search will return only documents allowed by your signed-in groups."
+            ),
+            agent="knowledge",
+            events=[
+                f"knowledge-docs: blocked corpus enumeration for groups {groups or ['none']}",
+                "knowledge-docs: secure AI Search document-level security",
+            ],
+            blocked=True,
+            requires_approval=None,
+            sources=[],
+        )
     try:
         docs = list_knowledge_documents(caller_groups=groups, top=200)
     except SearchConfigurationError as exc:
@@ -633,10 +709,7 @@ def me(request: Request, include_token: bool = False) -> IdentityInfo:
 def login(request: Request):
     settings = get_settings()
     if not settings.azure_tenant_id or not settings.entra_api_client_id:
-        return HTMLResponse(
-            "Entra login is not configured. Set AZURE_TENANT_ID, "
-            "ENTRA_API_CLIENT_ID, and ENTRA_REDIRECT_URI."
-        )
+        return RedirectResponse("/")
     state = secrets.token_urlsafe(24)
     verifier = secrets.token_urlsafe(64)
     redirect_uri = _redirect_uri(request)
@@ -760,10 +833,12 @@ def format_error(exc: Exception) -> str:
 def chat(req: ChatRequest, request: Request) -> ChatResponse:
     settings = get_settings()
     identity = _identity_from_request(request, req=req)
+    requested_customer_id = (req.customer_id or settings.default_customer_id) if not settings.enable_obo else identity.customer_id
+    identity_events = _spoofing_events(req, identity, requested_customer_id)
     if settings.enable_obo and not identity.authenticated:
         return ChatResponse(
             answer="Authentication required: secure identity/OBO mode needs a validated Entra login.",
-            agent="orchestrator", events=["identity: missing validated Entra principal"],
+            agent="orchestrator", events=[*identity_events, "identity: missing validated Entra principal"],
             blocked=True, requires_approval=None, sources=[],
         )
     if _is_knowledge_docs_prompt(req.message):
@@ -812,7 +887,7 @@ def chat(req: ChatRequest, request: Request) -> ChatResponse:
     return ChatResponse(
         answer=result.answer,
         agent=result.agent,
-        events=[*gateway_events, *result.events],
+        events=[*identity_events, *gateway_events, *result.events],
         blocked=result.blocked,
         requires_approval=result.requires_approval,
         sources=result.sources,

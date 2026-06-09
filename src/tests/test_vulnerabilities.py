@@ -15,6 +15,7 @@ import base64
 import json
 import pytest
 import re
+from types import SimpleNamespace
 
 
 def _reload_with(monkeypatch: pytest.MonkeyPatch, **env: str):
@@ -33,10 +34,12 @@ def _reload_with(monkeypatch: pytest.MonkeyPatch, **env: str):
         "LOCAL_DATA_MODE",
         "USE_MCP_TOOLS", "PG_MCP_SERVER_URL", "MCP_TOOL_ALLOWLIST",
         "AI_GATEWAY_TOKEN_LIMIT",
+        "FOUNDRY_RATE_LIMIT_RETRY_ROUNDS", "FOUNDRY_RATE_LIMIT_BACKOFF_SECONDS",
         "COHORT_USER_COUNT", "COHORT_USER_PREFIX",
         "CONTENT_SAFETY_ENDPOINT", "CONTENT_SAFETY_KEY", "LANGUAGE_ENDPOINT",
         "LANGUAGE_KEY", "SEARCH_ENDPOINT", "SEARCH_KEY",
         "AZURE_TENANT_ID", "ENTRA_API_CLIENT_ID", "ENTRA_REDIRECT_URI",
+        "TRUST_EASYAUTH_HEADERS",
         "CONTENT_SAFETY_SEVERITY_THRESHOLD", "CONTENT_SAFETY_BLOCK_OFF_TOPIC",
         "CONTENT_SAFETY_THRESHOLD_HATE", "CONTENT_SAFETY_THRESHOLD_SEXUAL",
         "CONTENT_SAFETY_THRESHOLD_VIOLENCE", "CONTENT_SAFETY_THRESHOLD_SELF_HARM",
@@ -186,7 +189,7 @@ def _b64_json(data: dict) -> str:
 
 
 def test_api_me_reads_entra_identity_and_jwt(monkeypatch):
-    _reload_with(monkeypatch)
+    _reload_with(monkeypatch, TRUST_EASYAUTH_HEADERS="true")
     from fastapi.testclient import TestClient
     from src.app.main import app
 
@@ -223,7 +226,7 @@ def test_api_me_reads_entra_identity_and_jwt(monkeypatch):
 
 
 def test_api_me_normalizes_legacy_manager_role(monkeypatch):
-    _reload_with(monkeypatch)
+    _reload_with(monkeypatch, TRUST_EASYAUTH_HEADERS="true")
     from fastapi.testclient import TestClient
     from src.app.main import app
 
@@ -245,6 +248,67 @@ def test_api_me_normalizes_legacy_manager_role(monkeypatch):
     assert body["user_id"] == "zava_manager"
     assert body["customer_id"] == "*"
     assert set(body["zava_groups"]) == {"retail-customers", "private-client", "zava-managers"}
+
+
+def test_untrusted_easyauth_header_cannot_unlock_manager_toggles(monkeypatch):
+    _reload_with(monkeypatch, SECURE_MODE="true", ENABLE_RUNTIME_TOGGLES="true")
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    manager_principal = {
+        "userDetails": "zava_manager@example.onmicrosoft.com",
+        "userId": "00000000-0000-0000-0000-000000000003",
+        "claims": [
+            {"typ": "roles", "val": "retail-customers"},
+            {"typ": "roles", "val": "private-client"},
+            {"typ": "roles", "val": "zava-managers"},
+        ],
+    }
+
+    client = TestClient(app)
+    monkeypatch.setattr("src.app.main._is_local_lab_request", lambda request: False)
+    headers = {"x-ms-client-principal": _b64_json(manager_principal)}
+    identity = client.get("/api/me", headers=headers).json()
+    config = client.get("/api/config", headers=headers).json()
+    toggle = client.post("/api/config/toggles", headers=headers, json={"secure_mode": False})
+
+    assert identity["authenticated"] is False
+    assert identity["zava_groups"] == []
+    assert config["runtime_toggles_allowed"] is False
+    assert toggle.status_code == 403
+
+
+def test_untrusted_authorization_header_cannot_spoof_manager(monkeypatch):
+    _reload_with(
+        monkeypatch,
+        SECURE_MODE="true",
+        ENABLE_RUNTIME_TOGGLES="true",
+        AZURE_TENANT_ID="tenant",
+    )
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    token = ".".join([
+        base64.urlsafe_b64encode(json.dumps({"alg": "none"}).encode()).decode().rstrip("="),
+        base64.urlsafe_b64encode(json.dumps({
+            "preferred_username": "zava_manager@example.onmicrosoft.com",
+            "roles": ["retail-customers", "private-client", "zava-managers"],
+        }).encode()).decode().rstrip("="),
+        "sig",
+    ])
+
+    client = TestClient(app)
+    monkeypatch.setattr("src.app.main._is_local_lab_request", lambda request: False)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    identity = client.get("/api/me", headers=headers).json()
+    config = client.get("/api/config", headers=headers).json()
+    toggle = client.post("/api/config/toggles", headers=headers, json={"secure_mode": False})
+
+    assert identity["authenticated"] is False
+    assert identity["zava_groups"] == []
+    assert config["runtime_toggles_allowed"] is False
+    assert toggle.status_code == 403
 
 
 def test_runtime_lab_toggles_can_iterate_controls(monkeypatch):
@@ -281,8 +345,28 @@ def test_runtime_lab_toggles_can_iterate_controls(monkeypatch):
     assert reset["content_safety"] is False
 
 
-def test_hosted_runtime_toggles_require_zava_manager(monkeypatch):
+def test_external_offline_host_does_not_allow_anonymous_runtime_toggles(monkeypatch):
     _reload_with(monkeypatch, SECURE_MODE="false", ENABLE_RUNTIME_TOGGLES="true")
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    client = TestClient(app, base_url="https://ca-app-zava.example.azurecontainerapps.io")
+
+    config = client.get("/api/config").json()
+    toggle = client.post("/api/config/toggles", json={"secure_mode": True})
+
+    assert config["runtime_toggles_allowed"] is False
+    assert "Sign in as zava_manager" in config["toggle_lock_reason"]
+    assert toggle.status_code == 403
+
+
+def test_hosted_runtime_toggles_require_zava_manager(monkeypatch):
+    _reload_with(
+        monkeypatch,
+        SECURE_MODE="false",
+        ENABLE_RUNTIME_TOGGLES="true",
+        TRUST_EASYAUTH_HEADERS="true",
+    )
     from fastapi.testclient import TestClient
     from src.app.main import app
 
@@ -590,6 +674,18 @@ def test_v3_profile_ssn_redacted_when_enabled(monkeypatch):
     assert "[USSocialSecurityNumber]" in res.answer
 
 
+def test_v3_supplied_ssn_prompt_still_answers_balance(monkeypatch):
+    orch, _, _ = _reload_with(monkeypatch, ENABLE_PII_REDACTION="false")
+    res = orch.handle_turn(
+        "Show my balance. For my records my SSN is 123-45-6789 and card 4111 1111 1111 1111.",
+        _ctx(),
+    )
+    assert res.agent == "accounts"
+    assert "ACC-100001" in res.answer
+    assert "111-22-3333" not in res.answer
+    assert "123-45-6789" not in res.answer
+
+
 def test_pii_enabled_without_azure_config_fails_closed(monkeypatch):
     _reload_with(
         monkeypatch,
@@ -601,6 +697,17 @@ def test_pii_enabled_without_azure_config_fails_closed(monkeypatch):
 
     with pytest.raises(guard.SecurityConfigurationError):
         guard.redact_pii("My SSN is 123-45-6789")
+
+
+def test_pii_long_text_is_chunked_for_azure_language(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_PII_REDACTION="true")
+    from src.agents.guard import guard
+
+    text = ("ACC-100001 savings balance\n" * 500).strip()
+    chunks = guard._pii_chunks(text)  # noqa: SLF001 - regression guard for service document limits
+    assert "".join(chunks) == text
+    assert len(chunks) > 1
+    assert all(len(chunk) <= guard._PII_MAX_DOCUMENT_CHARS for chunk in chunks)  # noqa: SLF001
 
 
 # --- V4: tool least privilege (IDOR) ---------------------------------------
@@ -769,6 +876,19 @@ def test_v5_doc_trimming_admin_sees_all(monkeypatch):
     assert any(d["id"] == "private-client-terms" for d in docs)
 
 
+def test_v5_knowledge_agent_handles_zero_accessible_docs(monkeypatch):
+    _, _, _ = _reload_with(monkeypatch, ENABLE_DOC_SECURITY="true")
+    from src.agents.knowledge import agent as knowledge_agent
+
+    monkeypatch.setattr(knowledge_agent, "search_documents", lambda *_args, **_kwargs: [])
+
+    res = knowledge_agent.run("Show my private client terms", _ctx(groups=["retail-customers"]))
+
+    assert res.blocked is False
+    assert "No documents are available" in res.answer
+    assert any("no accessible documents" in event for event in res.events)
+
+
 def test_v5_no_trimming_exposes_restricted(monkeypatch):
     _, _, _ = _reload_with(monkeypatch, ENABLE_DOC_SECURITY="false")
     from src.agents.tools.search import search_documents
@@ -878,9 +998,8 @@ def test_v5_knowledge_docs_probe_exposes_then_trims(monkeypatch):
     assert vulnerable["blocked"] is False
     assert "Private Client" in vulnerable["answer"]
     assert "Wire Transfer Policy" in vulnerable["answer"]
-    assert secure["blocked"] is False
-    assert "Private Client" not in secure["answer"]
-    assert "Wire Transfer Policy" in secure["answer"]
+    assert secure["blocked"] is True
+    assert "corpus enumeration is restricted" in secure["answer"]
     assert any("secure AI Search" in event for event in secure["events"])
 
 
@@ -900,6 +1019,90 @@ def test_v5_knowledge_docs_chat_prompt_exposes_all_when_insecure(monkeypatch):
     assert "Knowledge docs visible through vulnerable no document-level security" in response["answer"]
     assert "Private Client" in response["answer"]
     assert "Wire Transfer Policy" in response["answer"]
+
+
+def _unsigned_lab_jwt(payload: dict) -> str:
+    def encode(value: dict) -> str:
+        raw = json.dumps(value, separators=(",", ":")).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    return f"{encode({'alg': 'none', 'typ': 'JWT'})}.{encode(payload)}."
+
+
+def test_v5_auth_spoof_baseline_labels_no_detection(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_OBO="false", ENABLE_TOOL_LEAST_PRIV="false")
+    from fastapi.testclient import TestClient
+    from src.app.main import app
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={
+            "message": "What are my account balances?",
+            "customer_id": "CUST-1002",
+            "groups": ["private-client"],
+        },
+    ).json()
+
+    assert response["blocked"] is False
+    assert any("vulnerable baseline - no spoofing detection" in event for event in response["events"])
+    assert any("trusted client-supplied customer_id 'CUST-1002'" in event for event in response["events"])
+
+
+def test_v5_auth_spoof_secure_labels_detection_and_resolution(monkeypatch):
+    _reload_with(monkeypatch, ENABLE_OBO="true", ENABLE_TOOL_LEAST_PRIV="true")
+    from fastapi.testclient import TestClient
+    from src.app.main import _encode_cookie_json, app
+
+    token = _unsigned_lab_jwt({
+        "preferred_username": "user_1@MngEnvMCAP368386.onmicrosoft.com",
+        "oid": "ff1d59bb-864a-43b7-a3ba-ad9de3379776",
+        "groups": ["retail-customers"],
+    })
+    client = TestClient(app)
+    client.cookies.set("zava_local_auth", _encode_cookie_json({"id_token": token}))
+    response = client.post(
+        "/api/chat",
+        json={
+            "message": "What are my account balances?",
+            "customer_id": "CUST-1002",
+            "groups": ["private-client"],
+        },
+    ).json()
+
+    assert response["blocked"] is False
+    assert any("spoof detected - client sent customer_id 'CUST-1002'" in event for event in response["events"])
+    assert any("resolved by OBO - using signed-in Entra customer 'CUST-1001'" in event for event in response["events"])
+    assert "ACC-100001" in response["answer"]
+    assert "ACC-200001" not in response["answer"]
+
+
+def test_v5_hosted_mode_ignores_forged_local_auth_cookie(monkeypatch):
+    _reload_with(
+        monkeypatch,
+        ENABLE_OBO="true",
+        ENABLE_TOOL_LEAST_PRIV="true",
+        AZURE_TENANT_ID="4b7da602-1949-46fa-913e-c000e79a3b75",
+        ENTRA_API_CLIENT_ID="265f3c4f-315b-4066-a489-fa618688dbd6",
+    )
+    from fastapi.testclient import TestClient
+    from src.app.main import _encode_cookie_json, app
+
+    forged_token = _unsigned_lab_jwt({
+        "preferred_username": "user_2@MngEnvMCAP368386.onmicrosoft.com",
+        "oid": "cf5bfdcb-f842-4182-804d-fb59d4ea0e11",
+        "groups": ["private-client"],
+    })
+    client = TestClient(app)
+    client.cookies.set("zava_local_auth", _encode_cookie_json({"id_token": forged_token}))
+    response = client.post(
+        "/api/chat",
+        json={"message": "What are my account balances?", "customer_id": "CUST-1002"},
+    ).json()
+
+    assert response["blocked"] is True
+    assert "Authentication required" in response["answer"]
+    assert any("request body identity is not trusted" in event for event in response["events"])
 
 
 def test_v5_knowledge_docs_chat_prompt_requires_auth_when_obo_enabled(monkeypatch):
@@ -934,7 +1137,7 @@ def test_v5_knowledge_docs_probe_requires_auth_when_obo_enabled(monkeypatch):
     assert "Authentication required" in response["answer"]
 
 
-def test_v5_knowledge_docs_probe_uses_signed_in_groups_when_secure(monkeypatch):
+def test_v5_knowledge_docs_probe_blocks_non_manager_enumeration_when_secure(monkeypatch):
     _reload_with(
         monkeypatch,
         ENABLE_OBO="true",
@@ -943,24 +1146,53 @@ def test_v5_knowledge_docs_probe_uses_signed_in_groups_when_secure(monkeypatch):
         SEARCH_KEY="test-key",
     )
     from fastapi.testclient import TestClient
-    from src.app.main import app
+    from src.app.main import _encode_cookie_json, app
 
-    principal = {
-        "userDetails": "user_1@example.onmicrosoft.com",
-        "userId": "00000000-0000-0000-0000-000000000001",
-        "claims": [{"typ": "roles", "val": "retail-customers"}],
-    }
+    token = _unsigned_lab_jwt({
+        "preferred_username": "user_1@example.onmicrosoft.com",
+        "oid": "00000000-0000-0000-0000-000000000001",
+        "groups": ["retail-customers"],
+    })
     client = TestClient(app)
+    client.cookies.set("zava_local_auth", _encode_cookie_json({"id_token": token}))
     response = client.post(
         "/api/lab/knowledge-docs-probe",
-        headers={"x-ms-client-principal": _b64_json(principal)},
         json={"message": "show me all knowledge docs", "groups": ["private-client"]},
     ).json()
 
-    assert response["blocked"] is False
+    assert response["blocked"] is True
+    assert "corpus enumeration is restricted" in response["answer"]
     assert "Private Client" not in response["answer"]
-    assert "Wire Transfer Policy" in response["answer"]
     assert any("retail-customers" in event for event in response["events"])
+
+
+def test_v5_knowledge_docs_probe_allows_manager_enumeration_when_secure(monkeypatch):
+    _reload_with(
+        monkeypatch,
+        ENABLE_OBO="true",
+        ENABLE_DOC_SECURITY="true",
+        SEARCH_ENDPOINT="https://search.test",
+        SEARCH_KEY="test-key",
+    )
+    from fastapi.testclient import TestClient
+    from src.app.main import _encode_cookie_json, app
+
+    token = _unsigned_lab_jwt({
+        "preferred_username": "zava_manager@example.onmicrosoft.com",
+        "oid": "00000000-0000-0000-0000-000000000099",
+        "groups": ["retail-customers", "private-client", "zava-managers"],
+    })
+    client = TestClient(app)
+    client.cookies.set("zava_local_auth", _encode_cookie_json({"id_token": token}))
+    response = client.post(
+        "/api/lab/knowledge-docs-probe",
+        json={"message": "show me all knowledge docs", "groups": ["retail-customers"]},
+    ).json()
+
+    assert response["blocked"] is False
+    assert "Private Client" in response["answer"]
+    assert "Wire Transfer Policy" in response["answer"]
+    assert any("zava-managers" in event for event in response["events"])
 
 
 # --- V6: indirect prompt injection in a poisoned doc -----------------------
@@ -1341,3 +1573,95 @@ def test_v7_ui_probe_switches_verbose_to_safe_error(monkeypatch):
     assert secure["blocked"] is True
     assert "hunter2" not in secure["answer"]
     assert "internal error" in secure["answer"].lower()
+
+
+# --- Model pool resilience: 429 fallback across deployments ----------------
+class _RateLimitError(Exception):
+    status_code = 429
+
+
+class _FakeChatCompletions:
+    def __init__(self, outcomes: dict[str, object]):
+        self.outcomes = outcomes
+        self.calls: list[str] = []
+
+    def create(self, *, model: str, messages: list[dict[str, str]]):
+        self.calls.append(model)
+        outcome = self.outcomes[model]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=str(outcome)))]
+        )
+
+
+class _FakeOpenAIClient:
+    def __init__(self, outcomes: dict[str, object]):
+        self.chat = SimpleNamespace(completions=_FakeChatCompletions(outcomes))
+
+
+def _model_settings(deployments: list[str], retry_rounds: int = 0, backoff: float = 0.0):
+    return SimpleNamespace(
+        active_model_deployments=deployments,
+        foundry_rate_limit_retry_rounds=retry_rounds,
+        foundry_rate_limit_backoff_seconds=backoff,
+    )
+
+
+def test_model_pool_retries_429_on_next_deployment(monkeypatch):
+    from src.agents import model
+
+    client = _FakeOpenAIClient({"dep-a": _RateLimitError("Too Many Requests"), "dep-b": "ok"})
+    monkeypatch.setattr(model, "get_settings", lambda: _model_settings(["dep-a", "dep-b"]))
+    monkeypatch.setattr(model.random, "shuffle", lambda _values: None)
+
+    answer = model._call_foundry_with_pool(client, "system", "user", "ctx")
+
+    assert answer == "ok"
+    assert client.chat.completions.calls == ["dep-a", "dep-b"]
+
+
+def test_model_pool_waits_then_returns_busy_answer_when_exhausted(monkeypatch):
+    from src.agents import model
+
+    client = _FakeOpenAIClient({"dep-a": _RateLimitError("429"), "dep-b": _RateLimitError("429")})
+    sleeps: list[float] = []
+    monkeypatch.setattr(model, "get_settings", lambda: _model_settings(["dep-a", "dep-b"], 1, 1.5))
+    monkeypatch.setattr(model.random, "shuffle", lambda _values: None)
+    monkeypatch.setattr(model.time, "sleep", sleeps.append)
+
+    answer = model._call_foundry_with_pool(client, "system", "user", "ctx")
+
+    assert client.chat.completions.calls == ["dep-a", "dep-b", "dep-a", "dep-b"]
+    assert sleeps == [1.5]
+    assert "model pool is busy" in answer
+    assert "dep-a, dep-b" in answer
+
+
+def test_vulnerable_mode_uses_local_model_endpoint_even_when_online(monkeypatch):
+    from src.agents import model
+
+    settings = SimpleNamespace(
+        offline_mode=False,
+        enable_content_safety=False,
+        local_model_endpoint="https://local-phi.test/v1",
+    )
+    monkeypatch.setattr(model, "get_settings", lambda: settings)
+    monkeypatch.setattr(model, "_call_local_slm_with_timeout", lambda *_args: "local phi answer")
+
+    assert model.compose_answer("system", "unsafe prompt") == "local phi answer"
+
+
+def test_vulnerable_mode_refuses_governed_fallback_when_local_unavailable(monkeypatch):
+    from src.agents import model
+
+    settings = SimpleNamespace(
+        offline_mode=False,
+        enable_content_safety=False,
+        local_model_endpoint="https://local-phi.test/v1",
+    )
+    monkeypatch.setattr(model, "get_settings", lambda: settings)
+    monkeypatch.setattr(model, "_call_local_slm_with_timeout", lambda *_args: None)
+
+    with pytest.raises(RuntimeError, match="Refusing to fall back"):
+        model.compose_answer("system", "unsafe prompt")

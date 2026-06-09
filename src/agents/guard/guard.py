@@ -45,6 +45,7 @@ logger = logging.getLogger("zava.guard")
 # can tune strictness without editing code, exactly like the Azure portal.
 _CS_API_VERSION = "2024-09-01"
 _CS_GROUNDEDNESS_API_VERSION = "2024-09-15-preview"
+_PII_MAX_DOCUMENT_CHARS = 4500
 
 # --- A2A (agent-to-agent) forbidden cross-agent directives (V11) ------------
 # State-changing actions one agent must never be able to command in another via
@@ -179,6 +180,23 @@ def _azure_shield_prompt(text: str, source: str) -> None:
         )
 
 
+def _pii_chunks(text: str) -> list[str]:
+    if len(text) <= _PII_MAX_DOCUMENT_CHARS:
+        return [text]
+    chunks: list[str] = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= _PII_MAX_DOCUMENT_CHARS:
+            chunks.append(remaining)
+            break
+        split_at = remaining.rfind("\n", 0, _PII_MAX_DOCUMENT_CHARS)
+        if split_at < _PII_MAX_DOCUMENT_CHARS // 2:
+            split_at = _PII_MAX_DOCUMENT_CHARS
+        chunks.append(remaining[:split_at])
+        remaining = remaining[split_at:]
+    return chunks
+
+
 def _azure_redact_pii(text: str, creds: tuple[str, str]) -> PiiResult:
     """Genuine Azure AI Language ``recognize_pii_entities`` redaction."""
     from azure.ai.textanalytics import TextAnalyticsClient
@@ -188,11 +206,15 @@ def _azure_redact_pii(text: str, creds: tuple[str, str]) -> PiiResult:
     endpoint, key = creds
     credential = AzureKeyCredential(key) if key else DefaultAzureCredential()
     client = TextAnalyticsClient(endpoint=endpoint, credential=credential)
-    result = client.recognize_pii_entities([text])[0]
-    if result.is_error:  # pragma: no cover - service-side error
-        raise RuntimeError(getattr(result, "error", "PII recognition failed"))
-    found = [{"category": e.category, "text": e.text} for e in result.entities]
-    return PiiResult(text=result.redacted_text, entities=found)
+    redacted_chunks: list[str] = []
+    found: list[dict[str, str]] = []
+    for chunk in _pii_chunks(text):
+        result = client.recognize_pii_entities([chunk])[0]
+        if result.is_error:  # pragma: no cover - service-side error
+            raise RuntimeError(getattr(result, "error", "PII recognition failed"))
+        found.extend({"category": entity.category, "text": entity.text} for entity in result.entities)
+        redacted_chunks.append(result.redacted_text)
+    return PiiResult(text="".join(redacted_chunks), entities=found)
 
 
 # ---------------------------------------------------------------------------

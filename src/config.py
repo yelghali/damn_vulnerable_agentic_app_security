@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     foundry_model_name: str = Field(default="", alias="FOUNDRY_MODEL_NAME")
     foundry_model_deployment: str = Field(default="gpt-4.1-mini", alias="FOUNDRY_MODEL_DEPLOYMENT")
     foundry_model_deployment_pool: str = Field(default="", alias="FOUNDRY_MODEL_DEPLOYMENT_POOL")
+    foundry_rate_limit_retry_rounds: int = Field(default=1, alias="FOUNDRY_RATE_LIMIT_RETRY_ROUNDS")
+    foundry_rate_limit_backoff_seconds: float = Field(
+        default=2.0, alias="FOUNDRY_RATE_LIMIT_BACKOFF_SECONDS"
+    )
     foundry_ungoverned_deployment: str = Field(
         default="gpt-4.1-mini-nofilter", alias="FOUNDRY_UNGOVERNED_DEPLOYMENT"
     )
@@ -169,6 +173,7 @@ class Settings(BaseSettings):
     entra_api_client_secret: str = Field(default="", alias="ENTRA_API_CLIENT_SECRET")
     entra_api_scope: str = Field(default="", alias="ENTRA_API_SCOPE")
     entra_redirect_uri: str = Field(default="", alias="ENTRA_REDIRECT_URI")
+    trust_easyauth_headers: bool = Field(default=False, alias="TRUST_EASYAUTH_HEADERS")
     key_vault_uri: str = Field(default="", alias="KEY_VAULT_URI")
     appinsights_connection_string: str = Field(
         default="", alias="APPLICATIONINSIGHTS_CONNECTION_STRING"
@@ -216,9 +221,14 @@ class Settings(BaseSettings):
     def summary(self) -> dict[str, object]:
         """Toggle snapshot, surfaced in the UI banner so participants can see
         exactly which mitigations are active."""
+        uses_vulnerable_local_model = (
+            not self.offline_mode
+            and not self.enable_content_safety
+            and bool(self.local_model_endpoint)
+        )
         model_label = (
             f"local/{self.local_model_name}"
-            if self.offline_mode
+            if self.offline_mode or uses_vulnerable_local_model
             else (
                 f"foundry/{self.active_model_deployment} ({self.foundry_model_name})"
                 if self.foundry_model_name
@@ -231,9 +241,15 @@ class Settings(BaseSettings):
             "offline_mode": self.offline_mode,
             "local_data_mode": self.local_data_mode,
             "runtime_toggles_enabled": self.enable_runtime_toggles,
-            "model_backend": "foundry-local/openai-compatible" if self.offline_mode else "azure-ai-foundry",
+            "model_backend": (
+                "local-unguarded/openai-compatible"
+                if uses_vulnerable_local_model
+                else "foundry-local/openai-compatible" if self.offline_mode else "azure-ai-foundry"
+            ),
             "model_label": model_label,
             "model_deployment_pool": self.active_model_deployments,
+            "model_rate_limit_retry_rounds": self.foundry_rate_limit_retry_rounds,
+            "model_rate_limit_backoff_seconds": self.foundry_rate_limit_backoff_seconds,
             "data_backend": data_backend,
             "cohort_user_count": self.cohort_user_count,
             "cohort_user_prefix": self.cohort_user_prefix,

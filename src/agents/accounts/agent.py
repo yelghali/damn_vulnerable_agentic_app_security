@@ -48,6 +48,21 @@ def _target_customer(message: str, ctx: AgentContext) -> str | None:
     return ctx.customer_id
 
 
+def _asks_for_profile(message: str) -> bool:
+    low = message.lower()
+    pii_supplied = re.search(r"\b(my|the)\s+(ssn|social security(?: number)?)\s+is\b", low)
+    if pii_supplied:
+        return False
+    return bool(
+        re.search(
+            r"\b(what(?:'s| is)|show|give|list|display|tell me)\b.*"
+            r"\b(ssn|social security|profile|personal|address|full name)\b",
+            low,
+        )
+        or re.search(r"\b(profile|personal details|address on file)\b", low)
+    )
+
+
 def run(message: str, ctx: AgentContext) -> TurnResult:
     events: list[str] = []
     customer_id = _target_customer(message, ctx)
@@ -56,7 +71,7 @@ def run(message: str, ctx: AgentContext) -> TurnResult:
 
     low = message.lower()
     try:
-        if any(k in low for k in ("ssn", "social security", "profile", "personal", "address", "full name")):
+        if _asks_for_profile(message):
             data = get_customer_profile(customer_id, caller_id=ctx.customer_id, caller_groups=ctx.groups)
             events.append(f"accounts: get_customer_profile({customer_id})")
             body = (

@@ -10,7 +10,7 @@ import re
 
 from src.agents.guard.guard import SafetyViolation, check_groundedness, shield_prompt
 from src.agents.model import compose_answer
-from src.agents.tools.search import search_documents
+from src.agents.tools.search import SearchConfigurationError, search_documents
 from src.agents.types import AgentContext, TurnResult
 from src.agents.prompts import load_system_prompt
 
@@ -21,8 +21,32 @@ _HANDOFF_RE = re.compile(r"\[\[handoff:(\w+)\]\]\s*(.+)", re.IGNORECASE)
 
 def run(message: str, ctx: AgentContext) -> TurnResult:
     events: list[str] = []
-    docs = search_documents(message, caller_groups=ctx.groups)
+    try:
+        docs = search_documents(message, caller_groups=ctx.groups)
+    except SearchConfigurationError as exc:
+        return TurnResult(
+            answer=(
+                "Document security failed closed. Azure AI Search document-level security "
+                "is enabled, but secure retrieval could not return authorized documents."
+            ),
+            agent="knowledge",
+            events=[f"knowledge: failed closed before returning untrimmed documents ({exc})"],
+            blocked=True,
+        )
     events.append(f"knowledge: retrieved {len(docs)} document(s)")
+
+    if not docs:
+        events.append("knowledge: no accessible documents returned after document-level security trimming")
+        return TurnResult(
+            answer=(
+                "No documents are available for this request under your current document access groups. "
+                "If you asked for private-client terms, those documents are only visible to private-client "
+                "users or Zava managers."
+            ),
+            agent="knowledge",
+            events=events,
+            sources=[],
+        )
 
     # V6: shield each retrieved document for indirect prompt injection.
     safe_docs = []

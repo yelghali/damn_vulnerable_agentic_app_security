@@ -185,12 +185,117 @@ resource "azurerm_cognitive_deployment" "governed_pool_04" {
   depends_on = [azurerm_cognitive_deployment.governed_pool_03]
 }
 
+resource "azurerm_cognitive_deployment" "governed_pool_05" {
+  count                = var.model_deployment_pool_size >= 5 ? 1 : 0
+  name                 = "gpt-governed-05"
+  cognitive_account_id = azurerm_cognitive_account.ai.id
+  rai_policy_name      = var.secure_mode ? azapi_resource.rai_governed.name : null
+
+  model {
+    format  = "OpenAI"
+    name    = var.model_name
+    version = var.model_version
+  }
+
+  sku {
+    name     = "GlobalStandard"
+    capacity = var.model_deployment_capacity
+  }
+
+  depends_on = [azurerm_cognitive_deployment.governed_pool_04]
+}
+
+resource "azurerm_cognitive_deployment" "governed_pool_06" {
+  count                = var.model_deployment_pool_size >= 6 ? 1 : 0
+  name                 = "gpt-governed-06"
+  cognitive_account_id = azurerm_cognitive_account.ai.id
+  rai_policy_name      = var.secure_mode ? azapi_resource.rai_governed.name : null
+
+  model {
+    format  = "OpenAI"
+    name    = var.model_name
+    version = var.model_version
+  }
+
+  sku {
+    name     = "GlobalStandard"
+    capacity = var.model_deployment_capacity
+  }
+
+  depends_on = [azurerm_cognitive_deployment.governed_pool_05]
+}
+
+resource "azurerm_cognitive_deployment" "governed_pool_07" {
+  count                = var.model_deployment_pool_size >= 7 ? 1 : 0
+  name                 = "gpt-governed-07"
+  cognitive_account_id = azurerm_cognitive_account.ai.id
+  rai_policy_name      = var.secure_mode ? azapi_resource.rai_governed.name : null
+
+  model {
+    format  = "OpenAI"
+    name    = var.model_name
+    version = var.model_version
+  }
+
+  sku {
+    name     = "GlobalStandard"
+    capacity = var.model_deployment_capacity
+  }
+
+  depends_on = [azurerm_cognitive_deployment.governed_pool_06]
+}
+
+resource "azurerm_cognitive_deployment" "governed_pool_08" {
+  count                = var.model_deployment_pool_size >= 8 ? 1 : 0
+  name                 = "gpt-governed-08"
+  cognitive_account_id = azurerm_cognitive_account.ai.id
+  rai_policy_name      = var.secure_mode ? azapi_resource.rai_governed.name : null
+
+  model {
+    format  = "OpenAI"
+    name    = var.model_name
+    version = var.model_version
+  }
+
+  sku {
+    name     = "GlobalStandard"
+    capacity = var.model_deployment_capacity
+  }
+
+  depends_on = [azurerm_cognitive_deployment.governed_pool_07]
+}
+
+resource "azurerm_cognitive_deployment" "compatible_pool" {
+  for_each             = { for deployment in var.compatible_model_deployment_pool : deployment.deployment_name => deployment }
+  name                 = each.value.deployment_name
+  cognitive_account_id = azurerm_cognitive_account.ai.id
+  rai_policy_name      = var.secure_mode ? azapi_resource.rai_governed.name : null
+
+  model {
+    format  = "OpenAI"
+    name    = each.value.model_name
+    version = each.value.model_version
+  }
+
+  sku {
+    name     = "GlobalStandard"
+    capacity = each.value.capacity
+  }
+
+  depends_on = [azurerm_cognitive_deployment.governed]
+}
+
 locals {
   governed_model_deployment_pool = concat(
     [azurerm_cognitive_deployment.governed.name],
     [for deployment in azurerm_cognitive_deployment.governed_pool_02 : deployment.name],
     [for deployment in azurerm_cognitive_deployment.governed_pool_03 : deployment.name],
-    [for deployment in azurerm_cognitive_deployment.governed_pool_04 : deployment.name]
+    [for deployment in azurerm_cognitive_deployment.governed_pool_04 : deployment.name],
+    [for deployment in azurerm_cognitive_deployment.governed_pool_05 : deployment.name],
+    [for deployment in azurerm_cognitive_deployment.governed_pool_06 : deployment.name],
+    [for deployment in azurerm_cognitive_deployment.governed_pool_07 : deployment.name],
+    [for deployment in azurerm_cognitive_deployment.governed_pool_08 : deployment.name],
+    [for deployment in azurerm_cognitive_deployment.compatible_pool : deployment.name]
   )
 }
 

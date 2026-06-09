@@ -29,3 +29,18 @@ resource "azurerm_search_service" "search" {
 
   tags = local.tags
 }
+
+# Foundry Agent Service AI Search tools use keyless Entra auth through the
+# project managed identity. Grant it the roles required by the Foundry AI Search
+# tool so portal-visible agents can query the index without an admin key.
+resource "azurerm_role_assignment" "foundry_project_search_data" {
+  scope                = azurerm_search_service.search.id
+  role_definition_name = "Search Index Data Contributor"
+  principal_id         = azapi_resource.project.identity[0].principal_id
+}
+
+resource "azurerm_role_assignment" "foundry_project_search_service" {
+  scope                = azurerm_search_service.search.id
+  role_definition_name = "Search Service Contributor"
+  principal_id         = azapi_resource.project.identity[0].principal_id
+}

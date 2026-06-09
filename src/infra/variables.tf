@@ -36,12 +36,23 @@ variable "model_deployment_capacity" {
 variable "model_deployment_pool_size" {
   type        = number
   default     = 1
-  description = "Number of governed model deployments behind the shared app. Use 2-4 for classroom cohorts to reduce per-deployment rate limiting while keeping one shared Foundry project."
+  description = "Number of governed model deployments behind the shared app. Use 4-8 for classroom cohorts to reduce per-deployment rate limiting while keeping one shared Foundry project."
 
   validation {
-    condition     = var.model_deployment_pool_size >= 1 && var.model_deployment_pool_size <= 4
-    error_message = "model_deployment_pool_size must be between 1 and 4."
+    condition     = var.model_deployment_pool_size >= 1 && var.model_deployment_pool_size <= 8
+    error_message = "model_deployment_pool_size must be between 1 and 8."
   }
+}
+
+variable "compatible_model_deployment_pool" {
+  type = list(object({
+    deployment_name = string
+    model_name      = string
+    model_version   = string
+    capacity        = number
+  }))
+  default     = []
+  description = "Optional extra chat-completions-compatible governed deployments to append to the runtime pool, e.g. a higher-capacity gpt-4.1 deployment for classroom fallback."
 }
 
 variable "pg_admin_user" {
