@@ -77,6 +77,9 @@
     .toggle-actions { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
     .toggle-actions button { flex: 1 1 calc(50% - 6px); min-width: 120px; padding: 7px 8px; border-radius: 8px; font-size: 11px; background: #263244; }
     .toggle-actions button:nth-child(n+3) { flex-basis: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted); }
+    .model-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
+    .model-choices button { padding: 7px 8px; border-radius: 8px; font-size: 11px; background: #263244; color: #d8e3f8; }
+    .model-choices button.on { background: #14532d; color: #bbf7d0; }
     .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-left: 8px; }
     .dot.on { background: var(--on); box-shadow: 0 0 6px var(--on); }
     .dot.off { background: var(--off); }

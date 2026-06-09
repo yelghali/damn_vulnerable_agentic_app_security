@@ -58,6 +58,7 @@ class ChatRequest(BaseModel):
 class ToggleRequest(BaseModel):
     secure_mode: bool | None = None
     controls: dict[str, bool] = Field(default_factory=dict)
+    model_backend: str | None = None
     reset: bool = False
 
 
@@ -545,6 +546,11 @@ def update_toggles(req: ToggleRequest, request: Request) -> dict:
         object.__setattr__(settings, "secure_mode", req.secure_mode)
         for attr in SECURITY_CONTROLS.values():
             object.__setattr__(settings, attr, req.secure_mode)
+    if req.model_backend is not None:
+        model_backend = req.model_backend.strip().lower()
+        if model_backend not in {"auto", "local", "foundry"}:
+            raise HTTPException(status_code=400, detail="model_backend must be auto, local, or foundry")
+        object.__setattr__(settings, "model_backend_override", model_backend)
     for key, enabled in req.controls.items():
         object.__setattr__(settings, SECURITY_CONTROLS[key], enabled)
     if "agent_governance" in req.controls:

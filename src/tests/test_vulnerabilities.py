@@ -324,6 +324,10 @@ def test_runtime_lab_toggles_can_iterate_controls(monkeypatch):
     assert baseline["content_safety"] is False
     assert baseline["model_label"] == "local/phi-3.5-mini"
 
+    foundry_model = client.post("/api/config/toggles", json={"model_backend": "foundry"}).json()
+    assert foundry_model["model_backend_override"] == "foundry"
+    assert foundry_model["model_backend"] == "azure-ai-foundry"
+
     all_on = client.post("/api/config/toggles", json={"secure_mode": True}).json()
     assert all_on["secure_mode"] is True
     assert all(all_on[key] is True for key in SECURITY_CONTROLS)
@@ -1665,3 +1669,29 @@ def test_vulnerable_mode_refuses_governed_fallback_when_local_unavailable(monkey
 
     with pytest.raises(RuntimeError, match="Refusing to fall back"):
         model.compose_answer("system", "unsafe prompt")
+
+
+def test_local_slm_sends_ollama_prediction_cap(monkeypatch):
+    from src.agents import model
+
+    captured: dict[str, object] = {}
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="local answer"))]
+            )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=_FakeCompletions()))
+    settings = SimpleNamespace(local_model_max_tokens=64)
+
+    monkeypatch.setattr(model, "get_settings", lambda: settings)
+    monkeypatch.setattr(model, "_local_client", lambda: (client, "phi3:mini"))
+
+    assert model._call_local_slm("system", "prompt", "ctx") == "local answer"
+    assert captured["max_tokens"] == 64
+    assert captured["extra_body"] == {
+        "num_predict": 64,
+        "options": {"num_predict": 64},
+    }

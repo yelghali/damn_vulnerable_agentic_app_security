@@ -14,14 +14,14 @@
 #                  it using Microsoft Foundry" + "Azure Database for PostgreSQL
 #                  tools for the Azure MCP Server".
 #
-# NOTE: the image ENTRYPOINT is fixed to `./server-binary server start`. Azure
-# Container Apps `args` are APPENDED to that entrypoint (they do not replace it),
-# which is the supported way to add `--transport http`, `--namespace postgres`,
-# etc.
+# NOTE: set the image command explicitly instead of relying on the mutable
+# `latest` image entrypoint. Azure Container Apps `args` then add
+# `--transport sse`, `--namespace postgres`, etc.
 #
 # Security framing for the lab:
 #   * Outgoing auth uses the Container App's managed identity
-#     (UseHostingEnvironmentIdentity) — give it least-privilege RBAC (V4/V8).
+#     (AZURE_MCP_INCLUDE_PRODUCTION_CREDENTIALS=true) — give it
+#     least-privilege RBAC (V4/V8).
 #   * Baseline disables incoming HTTP auth for simplicity (deliberately weak —
 #     a hardened deployment would front it with Entra app auth and use the
 #     Foundry project's managed identity as the audience).
@@ -64,35 +64,37 @@ resource "azurerm_container_app" "mcp_toolbox" {
       cpu    = 0.5
       memory = "1Gi"
 
-      # Appended to the image entrypoint (`server start`):
-      #   --transport http          -> remote MCP over the ACA ingress
-      #   --namespace postgres ...   -> expose only DB-related tools
-      #   --outgoing-auth-strategy   -> use this container's managed identity
-      #   --dangerously-disable-http-incoming-auth -> lab simplicity (see note)
+      command = ["./server-binary", "server", "start"]
+
+      # Appended to `server start`:
+      #   --transport sse           -> remote MCP over the ACA ingress
+      #   --mode all                 -> expose individual postgres_* tools
+      #   --namespace postgres       -> expose only DB-related tools
       args = [
-        "--transport", "http",
+        "--transport", "sse",
+        "--mode", "all",
         "--namespace", "postgres",
-        "--namespace", "group",
-        "--namespace", "subscription",
-        "--outgoing-auth-strategy", "UseHostingEnvironmentIdentity",
-        "--dangerously-disable-http-incoming-auth",
       ]
 
-      # The .NET server honours ASPNETCORE_URLS for its listen port.
+      # The Azure MCP SSE host listens on its default port 5008.
       env {
         name  = "ASPNETCORE_URLS"
-        value = "http://+:8080"
+        value = "http://+:5008"
       }
       env {
         name  = "AZURE_SUBSCRIPTION_ID"
         value = data.azurerm_client_config.current.subscription_id
+      }
+      env {
+        name  = "AZURE_MCP_INCLUDE_PRODUCTION_CREDENTIALS"
+        value = "true"
       }
     }
   }
 
   ingress {
     external_enabled = true
-    target_port      = 8080
+    target_port      = 5008
     transport        = "http"
 
     traffic_weight {
@@ -120,8 +122,13 @@ resource "azurerm_container_app" "local_model" {
   tags                         = merge(local.tags, { purpose = "vulnerable-local-model" })
 
   template {
-    min_replicas = 1
-    max_replicas = 1
+    min_replicas = var.local_model_min_replicas
+    max_replicas = var.local_model_max_replicas
+
+    http_scale_rule {
+      name                = "local-model-concurrency"
+      concurrent_requests = var.local_model_concurrent_requests
+    }
 
     container {
       name   = "local-model"
@@ -258,6 +265,18 @@ resource "azurerm_container_app" "zava_app" {
       env {
         name  = "LOCAL_MODEL_NAME"
         value = var.local_model_name
+      }
+      env {
+        name  = "LOCAL_MODEL_TIMEOUT_SECONDS"
+        value = "180"
+      }
+      env {
+        name  = "LOCAL_MODEL_MAX_TOKENS"
+        value = "128"
+      }
+      env {
+        name  = "MODEL_BACKEND"
+        value = var.app_model_backend
       }
       env {
         name  = "FOUNDRY_PROJECT_ENDPOINT"
@@ -478,6 +497,10 @@ resource "azurerm_container_app" "zava_user_app" {
       env {
         name  = "LOCAL_MODEL_NAME"
         value = var.local_model_name
+      }
+      env {
+        name  = "MODEL_BACKEND"
+        value = var.app_model_backend
       }
       env {
         name  = "FOUNDRY_PROJECT_ENDPOINT"

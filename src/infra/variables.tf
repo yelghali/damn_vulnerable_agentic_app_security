@@ -250,6 +250,17 @@ variable "app_enable_runtime_toggles" {
   description = "Expose runtime lab toggles in the hosted app. Use true only for instructor validation or trusted lab sandboxes; paired app URLs are preferred for public learner deployments."
 }
 
+variable "app_model_backend" {
+  type        = string
+  default     = "auto"
+  description = "Model route for the hosted app: auto, local, or foundry. Use foundry for signed-in shared cohorts; local is for the V1/V2 vulnerable baseline demo."
+
+  validation {
+    condition     = contains(["auto", "local", "foundry"], var.app_model_backend)
+    error_message = "app_model_backend must be one of: auto, local, foundry."
+  }
+}
+
 variable "app_entra_client_id" {
   type        = string
   default     = ""
@@ -296,6 +307,24 @@ variable "local_model_memory" {
   type        = string
   default     = "4Gi"
   description = "Memory allocated to the hosted local model Container App. Increase for larger local models."
+}
+
+variable "local_model_min_replicas" {
+  type        = number
+  default     = 1
+  description = "Minimum replicas for the hosted local Phi/Ollama model Container App. Raise for instructor-led cohorts to pre-warm capacity."
+}
+
+variable "local_model_max_replicas" {
+  type        = number
+  default     = 1
+  description = "Maximum replicas for the hosted local Phi/Ollama model Container App. Raise for instructor-led cohorts to absorb concurrent baseline prompts."
+}
+
+variable "local_model_concurrent_requests" {
+  type        = number
+  default     = 4
+  description = "HTTP concurrency threshold per local model replica before ACA scales out. Keep low because CPU-only Phi generation is slow."
 }
 
 variable "vulnerable_app_url" {

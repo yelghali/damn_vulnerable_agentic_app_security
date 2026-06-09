@@ -69,6 +69,8 @@ class Settings(BaseSettings):
     local_model_endpoint: str = Field(default="", alias="LOCAL_MODEL_ENDPOINT")
     local_model_key: str = Field(default="", alias="LOCAL_MODEL_KEY")
     local_model_timeout_seconds: float = Field(default=45.0, alias="LOCAL_MODEL_TIMEOUT_SECONDS")
+    local_model_max_tokens: int = Field(default=128, alias="LOCAL_MODEL_MAX_TOKENS")
+    model_backend_override: str = Field(default="auto", alias="MODEL_BACKEND")
 
     # --- Per-vulnerability toggles (None => inherit from secure_mode) -------
     enable_content_safety: bool | None = Field(default=None, alias="ENABLE_CONTENT_SAFETY")  # V1/V2
@@ -221,14 +223,23 @@ class Settings(BaseSettings):
     def summary(self) -> dict[str, object]:
         """Toggle snapshot, surfaced in the UI banner so participants can see
         exactly which mitigations are active."""
+        backend_override = self.model_backend_override.strip().lower()
+        if backend_override not in {"auto", "local", "foundry"}:
+            backend_override = "auto"
         uses_vulnerable_local_model = (
             not self.offline_mode
+            and backend_override != "foundry"
             and not self.enable_content_safety
             and bool(self.local_model_endpoint)
         )
+        uses_local_model = (
+            (self.offline_mode and backend_override != "foundry")
+            or backend_override == "local"
+            or uses_vulnerable_local_model
+        )
         model_label = (
             f"local/{self.local_model_name}"
-            if self.offline_mode or uses_vulnerable_local_model
+            if uses_local_model
             else (
                 f"foundry/{self.active_model_deployment} ({self.foundry_model_name})"
                 if self.foundry_model_name
@@ -241,10 +252,12 @@ class Settings(BaseSettings):
             "offline_mode": self.offline_mode,
             "local_data_mode": self.local_data_mode,
             "runtime_toggles_enabled": self.enable_runtime_toggles,
+            "model_backend_override": backend_override,
+            "model_backend_options": ["auto", "local", "foundry"],
             "model_backend": (
                 "local-unguarded/openai-compatible"
-                if uses_vulnerable_local_model
-                else "foundry-local/openai-compatible" if self.offline_mode else "azure-ai-foundry"
+                if uses_vulnerable_local_model or backend_override == "local"
+                else "foundry-local/openai-compatible" if self.offline_mode and backend_override != "foundry" else "azure-ai-foundry"
             ),
             "model_label": model_label,
             "model_deployment_pool": self.active_model_deployments,

@@ -179,6 +179,7 @@ def _call_foundry_with_pool(client: object, system_prompt: str, user_message: st
 
 def _call_local_slm(system_prompt: str, user_message: str, context: str) -> str | None:
     """Call the local SLM; return ``None`` when no real model is available."""
+    settings = get_settings()
     built = _local_client()
     if built is None:
         return None
@@ -192,7 +193,11 @@ def _call_local_slm(system_prompt: str, user_message: str, context: str) -> str 
                 {"role": "user", "content": f"{user_message}\n\nContext:\n{context}"},
             ],
             temperature=0.2,
-            max_tokens=400,
+            max_tokens=settings.local_model_max_tokens,
+            extra_body={
+                "num_predict": settings.local_model_max_tokens,
+                "options": {"num_predict": settings.local_model_max_tokens},
+            },
         )
         return completion.choices[0].message.content or ""
     except Exception as exc:
@@ -217,12 +222,22 @@ def _call_local_slm_with_timeout(system_prompt: str, user_message: str, context:
 def compose_answer(system_prompt: str, user_message: str, context: str = "") -> str:
     settings = get_settings()
 
-    use_vulnerable_local_model = not settings.enable_content_safety and bool(settings.local_model_endpoint)
-    if settings.offline_mode or use_vulnerable_local_model:
+    backend_override = getattr(settings, "model_backend_override", "auto").strip().lower()
+    if backend_override not in {"auto", "local", "foundry"}:
+        backend_override = "auto"
+
+    force_local_model = backend_override == "local"
+    force_foundry_model = backend_override == "foundry"
+    use_vulnerable_local_model = (
+        not force_foundry_model
+        and not settings.enable_content_safety
+        and bool(settings.local_model_endpoint)
+    )
+    if (settings.offline_mode and not force_foundry_model) or force_local_model or use_vulnerable_local_model:
         answer = _call_local_slm_with_timeout(system_prompt, user_message, context)
         if answer is not None:
             return answer
-        if use_vulnerable_local_model:
+        if use_vulnerable_local_model or force_local_model:
             raise RuntimeError(
                 "Vulnerable baseline mode requires the local unguarded model endpoint, "
                 "but LOCAL_MODEL_ENDPOINT is not reachable. Refusing to fall back to a "

@@ -21,7 +21,8 @@ What it creates
                                  namespace), read-only tool allow-list
      * ``zava-transactions``  — ``MCPTool`` incl. write, ``require_approval``
                                  driven by the HITL toggle
-     * ``zava-reporting``     — summary writer (no tools)
+    * ``zava-reporting``     — summary writer with PostgreSQL data access and
+                           Foundry Code Interpreter
 
 The database tool is the **Microsoft Azure MCP Server** hosted on Azure
 Container Apps (see ``src/infra/containerapp.tf``); the agent reaches it at
@@ -77,12 +78,14 @@ ALL_AGENTS = [
 # Microsoft Azure MCP Server — postgres namespace tool names.
 # Read-only surface vs. the query tool that can also mutate data.
 MCP_POSTGRES_READ_TOOLS = [
-    "postgres_list",
-    "postgres_table_schema_get",
-    "postgres_server_config_get",
-    "postgres_server_param_get",
+    "azmcp_postgres_server_list",
+    "azmcp_postgres_server_config_get",
+    "azmcp_postgres_server_param_get",
+    "azmcp_postgres_database_list",
+    "azmcp_postgres_table_list",
+    "azmcp_postgres_table_schema_get",
 ]
-MCP_POSTGRES_QUERY_TOOL = "postgres_database_query"
+MCP_POSTGRES_QUERY_TOOL = "azmcp_postgres_database_query"
 
 _DOCS_DIR = Path(__file__).resolve().parents[1] / "data" / "docs"
 _FRONT_MATTER = re.compile(r"^---\n(.*?)\n---\n(.*)$", re.DOTALL)
@@ -235,29 +238,53 @@ def _search_tool(connection_id: str, settings: Any):
     )
 
 
-def _postgres_mcp_tool(settings: Any, *, allow_write: bool):
+def _postgres_mcp_tool(settings: Any, *, allow_query: bool = False, allow_write: bool = False):
     """Microsoft Azure MCP Server (postgres namespace) as a Foundry MCP tool."""
-    from azure.ai.projects.models import MCPTool  # noqa: PLC0415
+    from azure.ai.projects.models import (  # noqa: PLC0415
+        MCPTool,
+        MCPToolFilter,
+        MCPToolRequireApproval,
+    )
 
     if not settings.pg_mcp_server_url:
         raise SystemExit("PG_MCP_SERVER_URL is not set — deploy the Azure MCP Server (containerapp.tf).")
+
+    server_url = settings.pg_mcp_server_url.rstrip("/")
+    if server_url.endswith("/mcp"):
+        server_url = server_url[: -len("/mcp")]
 
     # V9: secure mode pins an allow-list; vulnerable baseline exposes all tools.
     allowed: list[str] | None = None
     if settings.enable_mcp_tool_security:
         allowed = list(MCP_POSTGRES_READ_TOOLS)
-        if allow_write:
+        if allow_query or allow_write:
             allowed.append(MCP_POSTGRES_QUERY_TOOL)
 
-    # V4 (HITL): write-capable tools require human approval in secure mode.
-    require_approval = "always" if (allow_write and settings.enable_hitl) else "never"
+    # V4 (HITL): the query tool can mutate data, so approval is scoped to that
+    # tool instead of blocking harmless schema/list calls.
+    require_approval: str | MCPToolRequireApproval = "never"
+    if allow_write and settings.enable_hitl:
+        require_approval = MCPToolRequireApproval(
+            always=MCPToolFilter(tool_names=[MCP_POSTGRES_QUERY_TOOL]),
+            never=MCPToolFilter(tool_names=MCP_POSTGRES_READ_TOOLS),
+        )
 
     return MCPTool(
         server_label="zava_postgres",
-        server_url=settings.pg_mcp_server_url,
+        server_url=server_url,
         allowed_tools=allowed,
         require_approval=require_approval,
     )
+
+
+def _code_interpreter_tool():
+    """Foundry-hosted Code Interpreter for portal-visible report analysis."""
+    from azure.ai.projects.models import (  # noqa: PLC0415
+        AutoCodeInterpreterToolParam,
+        CodeInterpreterTool,
+    )
+
+    return CodeInterpreterTool(container=AutoCodeInterpreterToolParam(type="auto"))
 
 
 # ---------------------------------------------------------------------------
@@ -287,19 +314,23 @@ def _build_definitions(project: Any, settings: Any) -> dict[str, Any]:
         f"{base_prompt}\n\n"
         "You are the Accounts specialist. Use the PostgreSQL tool to read the "
         "authenticated customer's accounts, balances, transactions and credit "
-        "score. Read only — never modify data."
+        "score. Read only; never modify data."
     )
     transactions_instructions = (
         f"{base_prompt}\n\n"
         "You are the Transactions specialist. You may move funds or email "
         "statements via the PostgreSQL tool. State-changing actions require "
-        "explicit human confirmation before you proceed."
+        "explicit human confirmation before you proceed. If Foundry asks for "
+        "tool approval, tell the learner that the action is waiting on human "
+        "approval rather than silently continuing."
     )
     reporting_instructions = (
         f"{base_prompt}\n\n"
-        "You are the Reporting specialist. Summarise the customer's finances "
-        "into a concise report from the data you are given; do not fabricate "
-        "numbers."
+        "You are the Reporting specialist. Use PostgreSQL only for SELECT "
+        "queries over the authenticated customer's financial data, then use "
+        "Code Interpreter for calculations, grouping, trend analysis and chart "
+        "preparation. Never run INSERT, UPDATE, DELETE, DDL or administrative "
+        "SQL. Do not fabricate numbers; if the data is unavailable, say so."
     )
     orchestrator_instructions = (
         f"{base_prompt}\n\n"
@@ -322,15 +353,20 @@ def _build_definitions(project: Any, settings: Any) -> dict[str, Any]:
         AGENT_ACCOUNTS: PromptAgentDefinition(
             model=model,
             instructions=accounts_instructions,
-            tools=[_postgres_mcp_tool(settings, allow_write=False)],
+            tools=[_postgres_mcp_tool(settings, allow_query=True, allow_write=False)],
         ),
         AGENT_TRANSACTIONS: PromptAgentDefinition(
             model=model,
             instructions=transactions_instructions,
-            tools=[_postgres_mcp_tool(settings, allow_write=True)],
+            tools=[_postgres_mcp_tool(settings, allow_query=True, allow_write=True)],
         ),
         AGENT_REPORTING: PromptAgentDefinition(
-            model=model, instructions=reporting_instructions
+            model=model,
+            instructions=reporting_instructions,
+            tools=[
+                _postgres_mcp_tool(settings, allow_query=True, allow_write=False),
+                _code_interpreter_tool(),
+            ],
         ),
     }
 

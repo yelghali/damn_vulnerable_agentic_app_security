@@ -534,7 +534,22 @@ async function loadPosture() {
     const links = [];
     if (cfg.vulnerable_app_url) links.push(`<a href="${cfg.vulnerable_app_url}">Open vulnerable app</a>`);
     if (cfg.secure_app_url) links.push(`<a href="${cfg.secure_app_url}">Open secure app</a>`);
-    switchBox.innerHTML = links.length ? links.join(" · ") : "No paired app URLs configured.";
+    const backend = cfg.model_backend_override || "auto";
+    const choices = cfg.model_backend_options || ["auto", "local", "foundry"];
+    const selector = cfg.runtime_toggles_allowed
+      ? `<div class="model-choices">${choices.map((choice) =>
+          `<button type="button" class="${backend === choice ? "on" : ""}" data-model-backend="${choice}">${choice === "local" ? "Local ACA" : choice === "foundry" ? "Foundry" : "Auto"}</button>`
+        ).join("")}</div>`
+      : `<div class="hint">${cfg.toggle_lock_reason || "Model routing is locked for this shared app."}</div>`;
+    switchBox.innerHTML = `
+      <div><b>Model route:</b> ${cfg.model_label || cfg.model_backend || "unknown"}</div>
+      ${selector}
+      <div class="hint">Auto uses local Phi only for the vulnerable V1/V2 baseline. Choose Foundry to keep signed-in learner traffic on Azure AI Foundry while other controls are tested.</div>
+      <div>${links.length ? links.join(" · ") : "No paired app URLs configured."}</div>
+    `;
+    switchBox.querySelectorAll("button[data-model-backend]").forEach((button) => {
+      button.addEventListener("click", () => updateModelBackend(button.dataset.modelBackend));
+    });
   }
 
   const box = $("toggles");
@@ -582,6 +597,11 @@ async function updateRuntimeToggles(payload) {
   } catch (err) {
     addMsg("Could not update lab controls: " + err, "bot", true);
   }
+}
+
+function updateModelBackend(modelBackend) {
+  if (!modelBackend) return;
+  updateRuntimeToggles({ model_backend: modelBackend });
 }
 
 function renderToggleActions(cfg) {
