@@ -328,9 +328,23 @@ def test_runtime_lab_toggles_can_iterate_controls(monkeypatch):
     assert foundry_model["model_backend_override"] == "foundry"
     assert foundry_model["model_backend"] == "azure-ai-foundry"
 
-    all_on = client.post("/api/config/toggles", json={"secure_mode": True}).json()
+    baseline_mode = client.post(
+        "/api/config/toggles",
+        json={"secure_mode": False, "model_backend": "local"},
+    ).json()
+    assert baseline_mode["secure_mode"] is False
+    assert baseline_mode["content_safety"] is False
+    assert baseline_mode["model_backend_override"] == "local"
+    assert baseline_mode["model_backend"] == "local-unguarded/openai-compatible"
+
+    all_on = client.post(
+        "/api/config/toggles",
+        json={"secure_mode": True, "model_backend": "foundry"},
+    ).json()
     assert all_on["secure_mode"] is True
     assert all(all_on[key] is True for key in SECURITY_CONTROLS)
+    assert all_on["model_backend_override"] == "foundry"
+    assert all_on["model_backend"] == "azure-ai-foundry"
 
     partial = client.post("/api/config/toggles", json={"controls": {"hitl": False}}).json()
     assert partial["secure_mode"] is True

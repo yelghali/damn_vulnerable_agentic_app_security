@@ -616,12 +616,12 @@ function renderToggleActions(cfg) {
   baseline.type = "button";
   baseline.textContent = "Baseline";
   baseline.title = "Turn every security control off for Part 1 / exploit mode.";
-  baseline.onclick = () => updateRuntimeToggles({ secure_mode: false });
+  baseline.onclick = () => updateRuntimeToggles({ secure_mode: false, model_backend: "local" });
   const answerKey = document.createElement("button");
   answerKey.type = "button";
   answerKey.textContent = "All controls";
   answerKey.title = "Turn every security control on, equivalent to SECURE_MODE=true.";
-  answerKey.onclick = () => updateRuntimeToggles({ secure_mode: true });
+  answerKey.onclick = () => updateRuntimeToggles({ secure_mode: true, model_backend: "foundry" });
   const reset = document.createElement("button");
   reset.type = "button";
   reset.textContent = "Reset to env / restart defaults";
