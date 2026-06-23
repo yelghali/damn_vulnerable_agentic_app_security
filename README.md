@@ -11,6 +11,8 @@ scores) so security genuinely matters. For each topic you first **observe / expl
 a vulnerability, then **remediate** it with concrete Azure config, code, and prompt
 changes — ending every module with a verifiable "before vs. after".
 
+> 📘 **Start here:** [Secure the Agentic App - Introduction](https://moaw.dev/workshop/?src=gh:yelghali/damn_vulnerable_agentic_app_security/main/docs/)
+
 > ⚠️ **This app is intentionally vulnerable.** It exists to teach AI security.
 > Never deploy the `vulnerable` baseline to a production or shared environment, and
 > only ever point it at throwaway sample data.
