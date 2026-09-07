@@ -5,7 +5,7 @@ short_title: "Secure the Agentic App"
 description: "Run a deliberately vulnerable multi-agent Azure AI app, observe each security failure, then turn on the matching Microsoft security control in code, Azure, and the UI."
 level: intermediate
 authors:
-  - Yassine El Ghali
+  - "Yassine El Ghali"
 contacts:
   - https://www.linkedin.com/in/yelghali/
 duration_minutes: 240
