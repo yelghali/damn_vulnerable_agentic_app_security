@@ -5,9 +5,9 @@ short_title: "Secure the Agentic App"
 description: "Run a deliberately vulnerable multi-agent Azure AI app, observe each security failure, then turn on the matching Microsoft security control in code, Azure, and the UI."
 level: intermediate
 authors:
-  - "Zava Security Lab"
+  - Yassine El Ghali
 contacts:
-  - "@zava-security-lab"
+  - https://www.linkedin.com/in/yelghali/
 duration_minutes: 240
 tags: azure, ai, security, agents, foundry, content-safety, prompt-shields, entra, apim, mcp, purview, red-teaming
 navigation_levels: 3
